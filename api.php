@@ -1,0 +1,458 @@
+<?php
+error_log('Acción recibida: ' . $_POST['action']);
+/**
+ * CBR to EPUB Converter API
+ * Endpoint para convertir archivos CBR a EPUB
+ */
+
+
+header('Content-Type: application/json');
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type');
+
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(200);
+    exit();
+}
+
+class CBRtoEPUBAPI {
+    private $uploadDir = './uploads';
+    private $outputDir = './converted';
+    private $tempDir;
+    private $maxFileSize = 500 * 1024 * 1024; // 500MB
+
+    public function __construct() {
+        $this->tempDir = sys_get_temp_dir();
+        $this->createDirectories();
+    }
+
+    private function createDirectories() {
+        @mkdir($this->uploadDir, 0755, true);
+        @mkdir($this->outputDir, 0755, true);
+    }
+
+    private function response($success, $message, $data = null, $code = 200) {
+        http_response_code($code);
+        return json_encode([
+            'success' => $success,
+            'message' => $message,
+            'data' => $data
+        ]);
+    }
+
+    public function handleRequest() {
+        $method = $_SERVER['REQUEST_METHOD'];
+
+        if ($method === 'POST' && isset($_POST['action'])) {
+            $action = $_POST['action'];
+
+            switch ($action) {
+                case 'upload':
+                    return $this->handleUpload();
+                case 'convert':
+                    return $this->handleConvert();
+                default:
+                    echo $this->response(false, 'Acción no válida', null, 400);
+            }
+        } elseif ($method === 'GET') {
+            $action = $_GET['action'] ?? null; // Usa null si no está definido
+            if ($action) {
+                switch ($action) {
+                    case 'download':
+                        return $this->handleDownload();
+                    default:
+                        echo $this->response(false, 'Acción no válida', null, 400);
+                }
+            } else {
+                echo $this->response(false, 'Parámetro "action" faltante', null, 400);
+            }
+        } else {
+            echo $this->response(false, 'Solicitud inválida', null, 400);
+        }
+    }
+
+    private function handleUpload() {
+        if (!isset($_FILES['file'])) {
+            echo $this->response(false, 'No se envió archivo', null, 400);
+            return;
+        }
+
+        $file = $_FILES['file'];
+
+        // Validaciones
+        if ($file['error'] !== UPLOAD_ERR_OK) {
+            echo $this->response(false, 'Error en la carga del archivo', null, 400);
+            return;
+        }
+
+        if ($file['size'] > $this->maxFileSize) {
+            echo $this->response(false, 'Archivo muy grande (máximo 500MB)', null, 413);
+            return;
+        }
+
+        if (!preg_match('/\.cbr$/i', $file['name'])) {
+            echo $this->response(false, 'Solo se aceptan archivos .cbr', null, 400);
+            return;
+        }
+
+        $fileId = uniqid();
+        $fileName = basename($file['name']);
+        $filePath = $this->uploadDir . '/' . $fileId . '_' . $fileName;
+
+        if (!move_uploaded_file($file['tmp_name'], $filePath)) {
+            echo $this->response(false, 'Error al guardar el archivo', null, 500);
+            return;
+        }
+
+        echo $this->response(true, 'Archivo cargado exitosamente', [
+            'fileId' => $fileId,
+            'fileName' => $fileName,
+            'size' => $file['size']
+        ]);
+    }
+
+    private function handleConvert() {
+        if (!isset($_POST['fileId'])) {
+            echo $this->response(false, 'ID de archivo no proporcionado', null, 400);
+            return;
+        }
+
+        $fileId = preg_replace('/[^a-z0-9]/i', '', $_POST['fileId']);
+        
+        // Buscar archivo
+        $files = glob($this->uploadDir . '/' . $fileId . '_*.cbr');
+        
+        if (empty($files)) {
+            echo $this->response(false, 'Archivo no encontrado', null, 404);
+            return;
+        }
+
+        $cbrFile = $files[0];
+        $fileName = basename($cbrFile);
+        $epubName = pathinfo($fileName, PATHINFO_FILENAME) . '.epub';
+        $epubPath = $this->outputDir . '/' . $epubName;
+
+        try {
+            $this->convertCBR($cbrFile, $epubPath);
+
+            if (!file_exists($epubPath)) {
+                throw new Exception('El archivo EPUB no se creó');
+            }
+
+            // Limpiar archivo CBR
+            @unlink($cbrFile);
+
+            echo $this->response(true, 'Conversión exitosa', [
+                'epubName' => $epubName,
+                'size' => filesize($epubPath),
+                'downloadUrl' => 'api.php?action=download&file=' . urlencode($epubName)
+            ]);
+        } catch (Exception $e) {
+            echo $this->response(false, 'Error en conversión: ' . $e->getMessage(), null, 500);
+        }
+    }
+
+    private function convertCBR($cbrFile, $epubPath) {
+        $tempExtractDir = $this->tempDir . '/cbr_extract_' . uniqid();
+        @mkdir($tempExtractDir, 0755, true);
+
+        try {
+            // Extraer CBR
+            $cmd = sprintf(
+                '7z x %s -o%s -aoa 2>&1',
+                escapeshellarg($cbrFile),
+                escapeshellarg($tempExtractDir)
+            );
+
+            exec($cmd, $output, $returnCode);
+
+            if ($returnCode !== 0) {
+                $errorOutput = trim(implode("\n", $output));
+                throw new Exception("Error al extraer el CBR (código {$returnCode}). ¿Tiene 7-Zip soporte RAR?\n{$errorOutput}");
+            }
+
+            if (!is_dir($tempExtractDir) || count(scandir($tempExtractDir)) <= 2) {
+                throw new Exception('No se pudo extraer el archivo CBR');
+            }
+
+            // Obtener imágenes
+            $images = $this->getImages($tempExtractDir);
+
+            if (empty($images)) {
+                throw new Exception('No se encontraron imágenes en el archivo');
+            }
+
+            foreach ($images as $imgPath) {
+                if (!is_file($imgPath) || filesize($imgPath) === 0) {
+                    throw new Exception('Las imágenes extraídas están vacías. Instala "p7zip-full" y "p7zip-rar" para habilitar soporte CBR/RAR.');
+                }
+            }
+
+            // Crear EPUB
+            $this->createEPUB($images, $epubPath, pathinfo($cbrFile, PATHINFO_FILENAME));
+        } finally {
+            // Limpiar
+            $this->removeDir($tempExtractDir);
+        }
+    }
+
+    private function getImages($folder) {
+        $validExts = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'tiff'];
+        $images = [];
+
+        $iterator = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($folder),
+            RecursiveIteratorIterator::SELF_FIRST
+        );
+
+        foreach ($iterator as $file) {
+            if ($file->isFile()) {
+                $ext = strtolower($file->getExtension());
+                if (in_array($ext, $validExts)) {
+                    $images[] = $file->getRealPath();
+                }
+            }
+        }
+
+        usort($images, function($a, $b) {
+            $dirA = dirname($a);
+            $dirB = dirname($b);
+            if ($dirA !== $dirB) {
+                return strcmp($dirA, $dirB);
+            }
+            $nameA = pathinfo($a, PATHINFO_FILENAME);
+            $nameB = pathinfo($b, PATHINFO_FILENAME);
+            return strnatcasecmp($nameA, $nameB);
+        });
+
+        return $images;
+    }
+
+    private function createEPUB($imageFiles, $outputEpub, $bookTitle) {
+        $bookUUID = $this->generateUUID();
+        $zip = new ZipArchive();
+
+        if ($zip->open($outputEpub, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
+            throw new Exception('No se pudo crear el archivo EPUB');
+        }
+
+        $zip->addFromString('mimetype', 'application/epub+zip');
+        $zip->setCompressionName('mimetype', ZipArchive::CM_STORE);
+
+        $containerXml = '<?xml version="1.0" encoding="UTF-8"?>' . "\n" .
+            '<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">' . "\n" .
+            '    <rootfiles>' . "\n" .
+            '        <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>' . "\n" .
+            '    </rootfiles>' . "\n" .
+            '</container>';
+        $zip->addFromString('META-INF/container.xml', $containerXml);
+
+            $pageRefs = [];
+            $imageRefs = [];
+            $spineRefs = [];
+            $pageEntries = [];
+
+        foreach ($imageFiles as $i => $imgPath) {
+            $imgName = basename($imgPath);
+            $ext = strtolower(pathinfo($imgPath, PATHINFO_EXTENSION));
+            $mediaType = $ext === 'jpg' ? 'image/jpeg' : "image/{$ext}";
+
+                $imgId = sprintf('img_%04d', $i);
+                $imageRefs[] = sprintf(
+                    '        <item id="%s" href="images/%s" media-type="%s"/>',
+                    htmlspecialchars($imgId),
+                htmlspecialchars($imgName),
+                htmlspecialchars($mediaType)
+            );
+
+                $pageId = sprintf('page_%04d', $i);
+                $pageName = sprintf('page_%04d.xhtml', $i);
+                $pageRefs[] = sprintf(
+                    '        <item id="%s" href="pages/%s" media-type="application/xhtml+xml"/>',
+                    htmlspecialchars($pageId),
+                    htmlspecialchars($pageName)
+                );
+                $spineRefs[] = sprintf('        <itemref idref="%s"/>', htmlspecialchars($pageId));
+                $pageEntries[] = [
+                    'id' => $pageId,
+                    'name' => $pageName,
+                    'label' => $i + 1
+                ];
+
+                $pageContent = <<<HTML
+    <?xml version="1.0" encoding="UTF-8"?>
+    <html xmlns="http://www.w3.org/1999/xhtml">
+    <head>
+        <title>Página %d</title>
+        <meta charset="UTF-8"/>
+        <style type="text/css">
+            body { margin: 0; padding: 0; background: #000; }
+            img { display: block; width: 100%%; height: auto; }
+        </style>
+    </head>
+    <body>
+        <img src="../images/%s" alt="Página %d"/>
+    </body>
+    </html>
+    HTML;
+                $safeImgName = htmlspecialchars($imgName, ENT_QUOTES | ENT_XML1, 'UTF-8');
+                $pageMarkup = sprintf($pageContent, $i + 1, $safeImgName, $i + 1);
+                $zip->addFromString("OEBPS/pages/{$pageName}", $pageMarkup);
+        }
+
+            // OEBPS/content.opf
+            $manifestItems = implode("\n", array_merge($pageRefs, $imageRefs));
+        $spineItems = implode("\n", $spineRefs);
+        $date = date('Y-m-d');
+
+        $contentOpf = <<<EOX
+<?xml version="1.0" encoding="UTF-8"?>
+<package version="2.0" xmlns="http://www.idpf.org/2007/opf" unique-identifier="uuid_id">
+    <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+        <dc:title>{$bookTitle}</dc:title>
+        <dc:creator>Unknown</dc:creator>
+        <dc:date>{$date}</dc:date>
+        <dc:identifier id="uuid_id">uuid:{$bookUUID}</dc:identifier>
+        <dc:language>es</dc:language>
+    </metadata>
+    <manifest>
+        <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
+{$manifestItems}
+    </manifest>
+    <spine toc="ncx">
+{$spineItems}
+    </spine>
+</package>
+EOX;
+        $zip->addFromString('OEBPS/content.opf', $contentOpf);
+
+        $navPoints = [];
+        foreach ($pageEntries as $entry) {
+            $navPoints[] = sprintf(
+                '        <navPoint id="%s" playOrder="%d"><navLabel><text>Página %d</text></navLabel><content src="pages/%s"/></navPoint>',
+                htmlspecialchars($entry['id']),
+                (int)$entry['label'],
+                (int)$entry['label'],
+                htmlspecialchars($entry['name'])
+            );
+        }
+
+        $navMap = implode("\n", $navPoints);
+        $tocNcx = <<<EOX
+<?xml version="1.0" encoding="UTF-8"?>
+<ncx version="2005-1" xmlns="http://www.daisy.org/z3986/2005/ncx/">
+    <head>
+        <meta name="dtb:uid" content="uuid:{$bookUUID}"/>
+    </head>
+    <docTitle><text>{$bookTitle}</text></docTitle>
+    <navMap>
+{$navMap}
+    </navMap>
+</ncx>
+EOX;
+        $zip->addFromString('OEBPS/toc.ncx', $tocNcx);
+
+        foreach ($imageFiles as $imgPath) {
+            $imgName = basename($imgPath);
+            if (!is_readable($imgPath)) {
+                throw new Exception('No se puede leer la imagen: ' . $imgName);
+            }
+
+            if (!$zip->addFile($imgPath, "OEBPS/images/{$imgName}")) {
+                throw new Exception('No se pudo agregar la imagen al EPUB: ' . $imgName);
+            }
+        }
+
+        $zip->close();
+    }
+
+    private function generateUUID() {
+        return sprintf(
+            '%04x%04x-%04x-%04x-%04x-%04x%04x%04x',
+            mt_rand(0, 0xffff), mt_rand(0, 0xffff),
+            mt_rand(0, 0xffff),
+            mt_rand(0, 0x0fff) | 0x4000,
+            mt_rand(0, 0x3fff) | 0x8000,
+            mt_rand(0, 0xffff), mt_rand(0, 0xffff), mt_rand(0, 0xffff)
+        );
+    }
+
+    private function removeDir($dir) {
+        if (!is_dir($dir)) return false;
+        $files = scandir($dir);
+        foreach ($files as $file) {
+            if ($file !== '.' && $file !== '..') {
+                $path = $dir . '/' . $file;
+                if (is_dir($path)) {
+                    $this->removeDir($path);
+                } else {
+                    @unlink($path);
+                }
+            }
+        }
+        return @rmdir($dir);
+    }
+
+    private function handleDownload() {
+        if (!isset($_GET['file'])) {
+            echo $this->response(false, 'Archivo no especificado', null, 400);
+            return;
+        }
+
+        $fileName = basename($_GET['file']);
+        $filePath = $this->outputDir . '/' . $fileName;
+
+        if (!file_exists($filePath) || !preg_match('/\.epub$/i', $fileName)) {
+            echo $this->response(false, 'Archivo no encontrado', null, 404);
+            return;
+        }
+
+        header('Content-Type: application/epub+zip');
+        header('Content-Disposition: attachment; filename="' . $fileName . '"');
+        header('Content-Length: ' . filesize($filePath));
+
+        readfile($filePath);
+        
+        // Limpiar archivo después de descargar
+        @unlink($filePath);
+        exit;
+    }
+
+    private function handleStatus() {
+        $files = scandir($this->uploadDir);
+        $uploadedFiles = array_filter($files, function($f) {
+            return $f !== '.' && $f !== '..' && preg_match('/\.cbr$/i', $f);
+        });
+
+        echo $this->response(true, 'Estado obtenido', [
+            'uploadedFiles' => count($uploadedFiles),
+            'totalUploaded' => array_sum(array_map(function($f) {
+                return filesize($this->uploadDir . '/' . $f);
+            }, $uploadedFiles))
+        ]);
+    }
+
+    private function handleList() {
+        $files = scandir($this->uploadDir);
+        $uploadedFiles = array_filter($files, function($f) {
+            return $f !== '.' && $f !== '..' && preg_match('/\.cbr$/i', $f);
+        });
+
+        $list = [];
+        foreach ($uploadedFiles as $f) {
+            $path = $this->uploadDir . '/' . $f;
+            $list[] = [
+                'name' => preg_replace('/^[a-z0-9]+_/', '', $f),
+                'size' => filesize($path),
+                'fileId' => preg_replace('/_.+/', '', $f)
+            ];
+        }
+
+        echo $this->response(true, 'Lista de archivos', $list);
+    }
+}
+
+$api = new CBRtoEPUBAPI();
+$api->handleRequest();
+?>

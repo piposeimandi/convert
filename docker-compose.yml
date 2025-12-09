@@ -1,0 +1,12 @@
+version: '3.9'
+services:
+  converter:
+    build: .
+    container_name: cbr-to-epub
+    ports:
+      - "8111:8111"
+    volumes:
+      - ./:/app
+      - ./uploads:/app/uploads
+      - ./converted:/app/converted
+    restart: unless-stopped

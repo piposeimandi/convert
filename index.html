@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CBR to EPUB Converter</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 600px;
+            width: 100%;
+            padding: 40px;
+            animation: slideUp 0.5s ease-out;
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .header h1 {
+            color: #333;
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .drop-zone {
+            border: 3px dashed #667eea;
+            border-radius: 15px;
+            padding: 50px 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: #f8f9ff;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .drop-zone:hover {
+            border-color: #764ba2;
+            background: #f0f2ff;
+            transform: scale(1.02);
+        }
+
+        .drop-zone.dragover {
+            border-color: #764ba2;
+            background: #e8ecff;
+            transform: scale(1.02);
+        }
+
+        .drop-zone.success {
+            border-color: #10b981;
+            background: #ecfdf5;
+        }
+
+        .drop-zone.error {
+            border-color: #ef4444;
+            background: #fef2f2;
+        }
+
+        .drop-icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+            animation: bounce 2s infinite;
+        }
+
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+
+        .drop-zone.dragover .drop-icon {
+            animation: none;
+            transform: scale(1.2);
+        }
+
+        .drop-text {
+            color: #333;
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .drop-hint {
+            color: #999;
+            font-size: 13px;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        .file-input {
+            cursor: pointer;
+        }
+
+        .upload-section {
+            margin-top: 30px;
+        }
+
+        .progress-container {
+            display: none;
+            margin-top: 30px;
+        }
+
+        .progress-container.show {
+            display: block;
+            animation: slideUp 0.3s ease-out;
+        }
+
+        .progress-label {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            font-size: 14px;
+            color: #666;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #e5e7eb;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        .message {
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 20px;
+            font-size: 14px;
+            display: none;
+            animation: slideUp 0.3s ease-out;
+        }
+
+        .message.show {
+            display: block;
+        }
+
+        .message.success {
+            background: #ecfdf5;
+            color: #065f46;
+            border: 1px solid #a7f3d0;
+        }
+
+        .message.error {
+            background: #fef2f2;
+            color: #991b1b;
+            border: 1px solid #fecaca;
+        }
+
+        .message.info {
+            background: #eff6ff;
+            color: #0c2e6b;
+            border: 1px solid #bfdbfe;
+        }
+
+        .file-item {
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            padding: 15px;
+            margin-top: 15px;
+            display: none;
+        }
+
+        .file-item.show {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            animation: slideUp 0.3s ease-out;
+        }
+
+        .file-info {
+            flex: 1;
+        }
+
+        .file-name {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 5px;
+        }
+
+        .file-size {
+            font-size: 12px;
+            color: #999;
+        }
+
+        .file-actions {
+            display: flex;
+            gap: 10px;
+            margin-left: 15px;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            white-space: nowrap;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .btn-secondary {
+            background: #f3f4f6;
+            color: #333;
+        }
+
+        .btn-secondary:hover {
+            background: #e5e7eb;
+        }
+
+        .btn-download {
+            background: #10b981;
+            color: white;
+        }
+
+        .btn-download:hover {
+            background: #059669;
+            transform: translateY(-2px);
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-right: 8px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .footer {
+            text-align: center;
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #e5e7eb;
+            font-size: 12px;
+            color: #999;
+        }
+
+        .icon {
+            display: inline-block;
+            margin-right: 5px;
+        }
+
+        @media (max-width: 600px) {
+            .container {
+                padding: 20px;
+            }
+
+            .header h1 {
+                font-size: 22px;
+            }
+
+            .drop-zone {
+                padding: 30px 15px;
+            }
+
+            .drop-icon {
+                font-size: 36px;
+            }
+
+            .file-item.show {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .file-actions {
+                width: 100%;
+                margin-left: 0;
+                margin-top: 10px;
+            }
+
+            .btn {
+                flex: 1;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📚 CBR to EPUB</h1>
+            <p>Convierte tus cómics a formato EPUB para Kindle</p>
+        </div>
+
+        <div class="upload-section">
+            <label for="fileInput" class="drop-zone file-input" id="dropZone">
+                <div class="drop-icon">📖</div>
+                <div class="drop-text">Arrastra tu archivo aquí</div>
+                <div class="drop-hint">o haz clic para seleccionar (máximo 500MB)</div>
+                <input type="file" id="fileInput" accept=".cbr" />
+            </label>
+        </div>
+
+        <div class="progress-container" id="progressContainer">
+            <div class="progress-label">
+                <span id="progressText">Cargando...</span>
+                <span id="progressPercent">0%</span>
+            </div>
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+        </div>
+
+        <div class="message" id="message"></div>
+
+        <div class="file-item" id="fileItem">
+            <div class="file-info">
+                <div class="file-name" id="fileName"></div>
+                <div class="file-size" id="fileSize"></div>
+            </div>
+            <div class="file-actions">
+                <button class="btn btn-primary" id="convertBtn">
+                    <span class="spinner" style="display: none;"></span>
+                    <span>Convertir</span>
+                </button>
+                <button class="btn btn-secondary" id="removeBtn">Cancelar</button>
+                <a href="#" class="btn btn-download" id="downloadBtn" style="display: none;">
+                    Descargar
+                </a>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p>💡 Tip: Puedes convertir múltiples archivos uno a la vez</p>
+        </div>
+    </div>
+
+    <script>
+        let currentFileId = null;
+        let currentFileName = null;
+
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const progressContainer = document.getElementById('progressContainer');
+        const progressFill = document.getElementById('progressFill');
+        const progressText = document.getElementById('progressText');
+        const progressPercent = document.getElementById('progressPercent');
+        const message = document.getElementById('message');
+        const fileItem = document.getElementById('fileItem');
+        const fileName = document.getElementById('fileName');
+        const fileSize = document.getElementById('fileSize');
+        const convertBtn = document.getElementById('convertBtn');
+        const removeBtn = document.getElementById('removeBtn');
+        const downloadBtn = document.getElementById('downloadBtn');
+
+        // Drag and drop
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('dragover');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                handleFile(files[0]);
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFile(e.target.files[0]);
+            }
+        });
+
+        function handleFile(file) {
+            // Validar tipo
+            if (!file.name.toLowerCase().endsWith('.cbr')) {
+                showMessage('Solo se aceptan archivos .cbr', 'error');
+                return;
+            }
+
+            // Validar tamaño
+            const maxSize = 500 * 1024 * 1024;
+            if (file.size > maxSize) {
+                showMessage('El archivo es demasiado grande (máximo 500MB)', 'error');
+                return;
+            }
+
+            uploadFile(file);
+        }
+
+        function uploadFile(file) {
+            const formData = new FormData();
+            formData.append('action', 'upload');
+            formData.append('file', file);
+
+            progressContainer.classList.add('show');
+            progressText.textContent = 'Cargando archivo...';
+            dropZone.classList.remove('success', 'error');
+
+            const xhr = new XMLHttpRequest();
+
+            xhr.upload.addEventListener('progress', (e) => {
+                if (e.lengthComputable) {
+                    const percent = Math.round((e.loaded / e.total) * 100);
+                    progressFill.style.width = percent + '%';
+                    progressPercent.textContent = percent + '%';
+                }
+            });
+
+            xhr.addEventListener('load', () => {
+                try {
+                    const response = JSON.parse(xhr.responseText);
+
+                    if (response.success) {
+                        currentFileId = response.data.fileId;
+                        currentFileName = response.data.fileName;
+
+                        // Mostrar archivo
+                        fileName.textContent = currentFileName;
+                        fileSize.textContent = formatFileSize(response.data.size);
+                        fileItem.classList.add('show');
+                        dropZone.classList.add('success');
+
+                        progressContainer.classList.remove('show');
+                        message.classList.remove('show');
+                    } else {
+                        showMessage(response.message, 'error');
+                        dropZone.classList.add('error');
+                    }
+                } catch (e) {
+                    showMessage('Error al procesar la respuesta', 'error');
+                    dropZone.classList.add('error');
+                }
+            });
+
+            xhr.addEventListener('error', () => {
+                showMessage('Error en la carga del archivo', 'error');
+                dropZone.classList.add('error');
+                progressContainer.classList.remove('show');
+            });
+
+            xhr.open('POST', 'api.php');
+            xhr.send(formData);
+        }
+
+        convertBtn.addEventListener('click', () => {
+            if (!currentFileId) return;
+
+            const formData = new FormData();
+            formData.append('action', 'convert');
+            formData.append('fileId', currentFileId);
+
+            progressContainer.classList.add('show');
+            progressText.textContent = 'Convirtiendo archivo...';
+            progressFill.style.width = '0%';
+            progressPercent.textContent = '0%';
+
+            convertBtn.disabled = true;
+            const spinner = convertBtn.querySelector('.spinner');
+            spinner.style.display = 'inline-block';
+
+            const xhr = new XMLHttpRequest();
+
+            xhr.addEventListener('load', () => {
+                try {
+                    const response = JSON.parse(xhr.responseText);
+
+                    if (response.success) {
+                        progressFill.style.width = '100%';
+                        progressPercent.textContent = '100%';
+                        progressText.textContent = 'Conversión completada ✓';
+
+                        showMessage('Conversión completada exitosamente', 'success');
+                        dropZone.classList.add('success');
+
+                        // Mostrar botón de descarga
+                        downloadBtn.href = response.data.downloadUrl;
+                        downloadBtn.style.display = 'inline-block';
+                        convertBtn.style.display = 'none';
+
+                        setTimeout(() => {
+                            downloadBtn.click();
+                        }, 500);
+                    } else {
+                        showMessage(response.message, 'error');
+                        dropZone.classList.add('error');
+                    }
+                } catch (e) {
+                    showMessage('Error en la conversión', 'error');
+                    dropZone.classList.add('error');
+                }
+
+                convertBtn.disabled = false;
+                spinner.style.display = 'none';
+                progressContainer.classList.remove('show');
+            });
+
+            xhr.addEventListener('error', () => {
+                showMessage('Error en la conversión', 'error');
+                dropZone.classList.add('error');
+                convertBtn.disabled = false;
+                spinner.style.display = 'none';
+                progressContainer.classList.remove('show');
+            });
+
+            xhr.open('POST', 'api.php');
+            xhr.send(formData);
+        });
+
+        removeBtn.addEventListener('click', () => {
+            currentFileId = null;
+            currentFileName = null;
+            fileInput.value = '';
+            fileItem.classList.remove('show');
+            progressContainer.classList.remove('show');
+            message.classList.remove('show');
+            dropZone.classList.remove('success', 'error');
+            convertBtn.style.display = 'inline-block';
+            downloadBtn.style.display = 'none';
+            convertBtn.disabled = false;
+        });
+
+        function showMessage(text, type) {
+            message.textContent = text;
+            message.className = 'message show ' + type;
+            setTimeout(() => {
+                message.classList.remove('show');
+            }, 5000);
+        }
+
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+        }
+    </script>
+</body>
+</html>
