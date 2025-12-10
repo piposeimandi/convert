@@ -433,6 +433,48 @@
             }
         }
     </style>
+    <style>
+        /* Popup shown above a history item when download fails */
+        .history-item { position: relative; }
+        .history-popup {
+            position: absolute;
+            bottom: calc(100% + 8px);
+            left: 0;
+            background: #fff;
+            color: #222;
+            border: 1px solid #ddd;
+            box-shadow: 0 6px 18px rgba(0,0,0,0.08);
+            padding: 10px 12px;
+            border-radius: 6px;
+            z-index: 60;
+            min-width: 220px;
+            font-size: 13px;
+        }
+        .history-popup::after{
+            content: '';
+            position: absolute;
+            left: 12px;
+            bottom: -8px;
+            width: 0;
+            height: 0;
+            border-left: 8px solid transparent;
+            border-right: 8px solid transparent;
+            border-top: 8px solid #fff;
+            filter: drop-shadow(0 2px 2px rgba(0,0,0,0.04));
+        }
+        .history-popup .popup-msg{ margin-bottom:8px; }
+        .history-popup .popup-actions{ display:flex; gap:8px; justify-content:flex-end; }
+        .history-popup .btn { padding:6px 9px; font-size:13px; border-radius:4px; cursor:pointer; }
+        .history-popup .btn.secondary{ background:#f3f4f6; border:1px solid #e5e7eb; }
+        .history-popup .btn.danger{ background:#ef4444; color:#fff; border:1px solid #ef4444; }
+
+        /* removal animation */
+        .history-item.removing{
+            opacity: 0;
+            transform: translateX(18px) scale(0.98);
+            transition: all 260ms ease;
+        }
+    </style>
 </head>
 <body>
     <div class="container">
@@ -768,6 +810,44 @@
             }).join('');
         }
 
+        function showHistoryPopup(entryEl, text, epub) {
+            if (!entryEl) {
+                showMessage(text, 'error');
+                return;
+            }
+            // Remove any existing popup in this entry
+            const existing = entryEl.querySelector('.history-popup');
+            if (existing) existing.remove();
+
+            const popup = document.createElement('div');
+            popup.className = 'history-popup';
+            popup.innerHTML = `<div class="popup-msg">${escapeHtml(text)}</div>
+                               <div class="popup-actions">
+                                 <button class="btn secondary popup-close">Cerrar</button>
+                                 <button class="btn danger popup-delete">Eliminar</button>
+                               </div>`;
+
+            // clicking close removes popup
+            popup.querySelector('.popup-close').addEventListener('click', () => popup.remove());
+
+            // delete triggers removal from server + animated removal
+            popup.querySelector('.popup-delete').addEventListener('click', async (ev) => {
+                ev.preventDefault();
+                popup.querySelector('.popup-delete').disabled = true;
+                await removeHistoryEntry(epub, { animate: true });
+                popup.remove();
+            });
+
+            entryEl.appendChild(popup);
+            // auto-dismiss after 8 seconds
+            setTimeout(() => { if (popup.parentNode) popup.remove(); }, 8000);
+        }
+
+        function escapeHtml(str){
+            if (!str) return '';
+            return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
         function showMessage(text, type) {
             message.textContent = text;
             message.className = 'message show ' + type;
@@ -873,15 +953,12 @@
                 try { data = await resp.json(); } catch (_) { data = null; }
 
                 const msg = (data && data.message) ? data.message : 'No se pudo descargar el archivo';
-                // Show message and reveal the inline delete button so user can remove it explicitly
-                showMessage(msg, 'error');
-                // Optionally focus the delete button for that entry
+                // Show an inline popup above the specific history item with actions
                 const entry = historyList.querySelector(`[data-epub="${encodeURIComponent(epub)}"]`);
                 if (entry) {
-                    const removeBtn = entry.querySelector('.history-remove');
-                    if (removeBtn) {
-                        removeBtn.focus();
-                    }
+                    showHistoryPopup(entry, msg, epub);
+                } else {
+                    showMessage(msg, 'error');
                 }
             } catch (err) {
                 console.error('Error en descarga', err);
@@ -900,7 +977,7 @@
             removeHistoryEntry(epub);
         });
 
-        async function removeHistoryEntry(epubName) {
+        async function removeHistoryEntry(epubName, opts = { animate: false }) {
             try {
                 const form = new FormData();
                 form.append('action', 'remove_history');
@@ -908,9 +985,25 @@
                 const res = await fetch('api.php', { method: 'POST', body: form, credentials: 'same-origin' });
                 const j = await res.json();
                 if (j.success) {
-                    // remove from localStorage too
+                    // update localStorage
                     const current = getLocalHistory().filter(i => (i.epubName || i.downloadUrl || '') !== epubName);
                     saveLocalHistory(current);
+
+                    if (opts.animate) {
+                        const entry = historyList.querySelector(`[data-epub="${encodeURIComponent(epubName)}"]`);
+                        if (entry) {
+                            entry.classList.add('removing');
+                            setTimeout(() => {
+                                if (entry.parentNode) entry.parentNode.removeChild(entry);
+                                if (!historyList.querySelector('.history-item')) {
+                                    renderHistory(current);
+                                }
+                            }, 260);
+                            return;
+                        }
+                    }
+
+                    // fallback: re-render the list
                     renderHistory(current);
                 } else {
                     showMessage(j.message || 'No se pudo eliminar del historial', 'error');
