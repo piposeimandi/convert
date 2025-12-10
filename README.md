@@ -1,348 +1,139 @@
-# CBR to EPUB Converter - API Web
+# CBR to EPUB Converter — Frontend + API
 
-Una aplicación web moderna para convertir cómics en formato CBR a libros electrónicos EPUB compatibles con Kindle.
+Aplicación ligera que incluye una **API en PHP** y un **frontend web (single-file `index.html`)** para convertir archivos CBR a EPUB compatibles con lectores electrónicos.
 
-## 🚀 Características
+Este repositorio contiene tanto el backend (`api.php`) como la interfaz de usuario, por lo que puedes usarlo como API desde otras aplicaciones o ejecutar la interfaz para uso interactivo.
 
-- **Interfaz moderna**: Drag & drop intuitivo para cargar archivos
-- **Conversión rápida**: Extrae imágenes de CBR y crea EPUBs válidos
-- **Descarga automática**: El archivo se descarga cuando termina la conversión
-- **API REST**: Endpoints para integración con otras aplicaciones
-- **Indicador de progreso**: Barra de progreso en tiempo real
-- **Responsive**: Funciona en desktop y dispositivos móviles
-- **Sin dependencias**: Solo usa herramientas estándar (PHP, 7z)
+## 🚀 Características principales
+
+- Frontend: drag & drop, barra de progreso y historial de conversiones en el navegador.
+- API REST: endpoints para subir, convertir, descargar y listar archivos.
+- Extracción robusta: usa `7z` y, como fallback, `unrar` para CBR/RAR5.
+- Historial cliente/servidor: las conversiones se guardan en la sesión y también en `localStorage` del navegador.
+- Eliminación segura: al eliminar una entrada desde la UI el archivo físico NO se borra; se renombra agregando la etiqueta `.DELETE`.
 
 ## 📋 Requisitos
 
-- PHP 7.2+
-- Extensión `ZipArchive` (generalmente incluida)
-- Herramientas `7z` y `unrar` (para archivos CBR con compresión RAR5)
-- Servidor web (Apache, Nginx, etc.) o Docker + Docker Compose (opcional)
+- PHP 8+ con `ZipArchive` habilitado.
+- `p7zip-full` (7z) y `unrar` recomendados para máximo soporte.
+- Docker y Docker Compose (opcional).
 
-## 🔧 Instalación
+## 🔧 Cómo ejecutar
 
-### Opción 1: Servidor Web (Recomendado)
-
-1. Coloca los archivos en tu documentroot del servidor web:
-   - `index.html` - Frontend
-   - `api.php` - Backend API
-   - Carpetas: `uploads/` y `converted/` (creadas automáticamente)
-
-2. Asegúrate que las carpetas tengan permisos de escritura:
-   ```bash
-   chmod 755 uploads converted
-   ```
-
-3. Accede a `http://localhost/ruta-a-tu-app/index.html`
-
-### Opción 2: PHP Built-in Server (Para pruebas)
+### Opción A — Con Docker (recomendado para reproducibilidad)
 
 ```bash
-# Navega al directorio del proyecto
-cd /ruta/al/proyecto
-
-# Inicia el servidor
-php -S localhost:8111
-
-# Accede a http://localhost:8111
-```
-
-### Opción 3: Docker Compose (Entorno aislado)
-
-```bash
-# Construir la imagen (solo la primera vez)
+# Construir la imagen (primera vez)
 docker compose build
 
-# Levantar el servicio y dejarlo escuchando en 8111
+# Levantar en segundo plano (expone el servicio en el puerto 8111)
 docker compose up -d
 
-# Ver logs si lo necesitas
+# Ver logs
 docker compose logs -f
 
-# Detener los contenedores
+# Parar
 docker compose down
 ```
 
-Los volúmenes definidos en `docker-compose.yml` mantienen sincronizadas las carpetas
-`uploads/` y `converted/` con tu disco local, así que los archivos subidos o convertidos
-seguirán disponibles aunque detengas los contenedores.
+La imagen incluye `7z`, `unrar` y la extensión `zip` para PHP. El servicio escucha en el puerto `8111` por defecto dentro del contenedor.
 
-## 📖 Uso
-
-### Interfaz Web
-
-1. Abre `index.html` en tu navegador
-2. Arrastra un archivo `.cbr` al área de drop o haz clic para seleccionar
-3. Haz clic en "Convertir"
-4. El archivo EPUB se descargará automáticamente cuando esté listo
-
-### API REST
-
-#### 1. Subir archivo
-
-**Endpoint**: `POST /api.php`
-
-```bash
-curl -F "action=upload" -F "file=@comic.cbr" http://localhost:8111/api.php
-```
-
-**Respuesta exitosa**:
-```json
-{
-  "success": true,
-  "message": "Archivo cargado exitosamente",
-  "data": {
-    "fileId": "507f1f77bcf86cd799439011",
-    "fileName": "comic.cbr",
-    "size": 85000000
-  }
-}
-```
-
-#### 2. Convertir archivo
-
-**Endpoint**: `POST /api.php`
-
-```bash
-curl -X POST -d "action=convert&fileId=507f1f77bcf86cd799439011" http://localhost:8111/api.php
-```
-
-**Respuesta exitosa**:
-```json
-{
-  "success": true,
-  "message": "Conversión exitosa",
-  "data": {
-    "epubName": "comic.epub",
-    "size": 45000000,
-    "downloadUrl": "api.php?action=download&file=comic.epub"
-  }
-}
-```
-
-#### 3. Descargar archivo
-
-**Endpoint**: `GET /api.php?action=download&file=comic.epub`
-
-Descarga el archivo EPUB directamente.
-
-#### 4. Estado del servidor
-
-**Endpoint**: `GET /api.php?action=status`
-
-```bash
-curl http://localhost:8111/api.php?action=status
-```
-
-**Respuesta**:
-```json
-{
-  "success": true,
-  "message": "Estado obtenido",
-  "data": {
-    "uploadedFiles": 2,
-    "totalUploaded": 170000000
-  }
-}
-```
-
-#### 5. Listar archivos
-
-**Endpoint**: `GET /api.php?action=list`
-
-```bash
-curl http://localhost:8111/api.php?action=list
-```
-
-**Respuesta**:
-```json
-{
-  "success": true,
-  "message": "Lista de archivos",
-  "data": [
-    {
-      "name": "comic1.cbr",
-      "size": 85000000,
-      "fileId": "507f1f77bcf86cd799439011"
-    }
-  ]
-}
-```
-
-## 📁 Estructura de carpetas
-
-```
-.
-├── index.html           # Frontend web
-├── api.php              # Backend API
-├── uploads/             # Archivos CBR subidos (temporal)
-├── converted/           # Archivos EPUB generados
-├── convert_cbr_to_epub.py   # Convertidor Python (alternativo)
-├── convert_cbr_to_epub.php  # Convertidor PHP CLI (alternativo)
-├── Dockerfile               # Imagen PHP + 7-Zip
-└── docker-compose.yml       # Stack listo para `docker compose up`
-```
-
-## ⚙️ Configuración
-
-### Límite de tamaño de archivo
-
-En `api.php`, línea ~15:
-```php
-private $maxFileSize = 500 * 1024 * 1024; // 500MB
-```
-
-Cambia este valor según tus necesidades.
-
-### Ajustes de PHP (.user.ini / Docker)
-
-El proyecto incluye un archivo `.user.ini` en la raíz **y** un override específico para Docker (`docker/php-upload.ini`) que elevan los límites de PHP para admitir cargas grandes:
-
-- `upload_max_filesize = 600M`
-- `post_max_size = 600M`
-- `memory_limit = 1024M`
-- `max_execution_time = 600`
-
-Si sirves la app con el servidor integrado (`php -S ...`) o con PHP-FPM/FastCGI, estos ajustes se aplican automáticamente. En el contenedor Docker, el archivo se copia a `/usr/local/etc/php/conf.d/uploads.ini`, así que no tienes que hacer nada adicional. En entornos donde `.user.ini` no se respeta (por ejemplo, algunos hosts con configuración propia), copia los mismos valores a tu `php.ini` o pásalos al iniciar el servidor, por ejemplo:
+### Opción B — PHP integrado (para pruebas rápidas)
 
 ```bash
 php -d upload_max_filesize=600M -d post_max_size=600M -d memory_limit=1G -S localhost:8111
 ```
 
-Los errores quedarán registrados en `/tmp/php-error.log` (ver `.user.ini`).
+Luego abre `http://localhost:8111/` en tu navegador.
 
-### Directorio de salida
+### Requisitos de carpetas
 
-Los archivos convertidos se guardan en la carpeta `converted/`. Puedes cambiar esto en `api.php`:
-```php
-private $outputDir = './converted';
-```
+El servidor usa `uploads/` para subidas temporales y `converted/` para EPUBs generados. Asegúrate de que existan y sean escribibles:
 
-## 🔒 Seguridad
-
-- Solo acepta archivos `.cbr`
-- Valida tamaño máximo de archivo
-- Limpia archivos temporales automáticamente
-- Descargas de archivos usan nombres sanitizados
-- Protección contra inyección de rutas
-
-## 🆘 Solución de problemas
-
-### Error: "7z: command not found"
-Instala 7-Zip:
-```bash
-# Ubuntu/Debian
-sudo apt-get install p7zip-full
-
-# macOS
-brew install p7zip
-
-# Windows
-# Descarga desde: https://www.7-zip.org/
-```
-
-### Error: "Unsupported Method" al convertir
-
-Los CBR recientes suelen usar RAR5, que no está completamente soportado por `p7zip`. Instala `unrar` (o `unar`) para proporcionar el descompresor propietario:
-
-```bash
-# Ubuntu/Debian
-sudo apt-get install unrar
-
-# macOS (homebrew)
-brew install unar
-```
-
-En Docker no necesitas hacer nada: la imagen ya incluye `unrar` y la API lo usa como respaldo si `7z` falla.
-
-### Error: "No se encontraron imágenes"
-El archivo CBR podría estar corrupto o no contener imágenes. Intenta:
-1. Verifica el archivo con `7z l archivo.cbr`
-2. Intenta el archivo en otro lector CBR
-
-### Las carpetas `uploads/` y `converted/` no existen
-Créalas manualmente:
 ```bash
 mkdir -p uploads converted
 chmod 755 uploads converted
 ```
 
-### El servidor devuelve 500 Internal Server Error
-Verifica:
-1. PHP y ZipArchive están instalados: `php -i | grep -i zip`
-2. Las carpetas tienen permisos de escritura: `ls -la`
-3. Los logs del servidor: `/var/log/apache2/error.log` (Apache)
+## 📖 Uso
 
-## 📊 Límites recomendados
+### Interfaz web
 
-- **Tamaño máximo**: 500MB
-- **Tiempo máximo de conversión**: Depende del servidor (típicamente 2-5 min)
-- **Imágenes máximas por EPUB**: No hay límite técnico
+1. Abre `index.html` en el navegador (o accede al host/puerto donde esté corriendo el servicio).
+2. Arrastra o selecciona un archivo `.cbr`.
+3. Pulsa `Convertir`.
+4. Cuando termine, el frontend mostrará un mensaje: "Archivo convertido — ahora puedes descargarlo desde el historial" y preparará la UI para aceptar otro archivo.
+5. Descarga el EPUB desde el panel `Historial`.
 
-## 🎯 Ejemplos de uso
+Nota: la descarga ya no se inicia automáticamente; el historial contiene entradas combinadas entre la sesión del servidor y el `localStorage` del navegador.
 
-### Con JavaScript Fetch
+### Endpoints principales (API REST)
 
-```javascript
-// Subir archivo
-const formData = new FormData();
-formData.append('action', 'upload');
-formData.append('file', fileInput.files[0]);
+- `POST api.php` — `action=upload` + `file=@...` → sube un CBR.
+- `POST api.php` — `action=convert&fileId=...` → convierte un CBR cargado a EPUB.
+- `GET api.php?action=download&file=<epubName>` → descarga el EPUB si existe en `converted/`.
+- `GET api.php?action=history` → devuelve el historial de la sesión (JSON).
+- `POST api.php` — `action=remove_history&epubName=...` → elimina la entrada del historial y marca el archivo con `.DELETE` (no lo borra físicamente).
 
-const uploadResponse = await fetch('api.php', {
-    method: 'POST',
-    body: formData
-});
+Ejemplo de subida con curl:
 
-const uploadData = await uploadResponse.json();
-const fileId = uploadData.data.fileId;
-
-// Convertir
-const convertResponse = await fetch('api.php', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: `action=convert&fileId=${fileId}`
-});
-
-const convertData = await convertResponse.json();
-console.log(convertData.data.downloadUrl);
+```bash
+curl -F "action=upload" -F "file=@comic.cbr" http://localhost:8111/api.php
 ```
 
-### Con Python
+Ejemplo de conversión:
 
-```python
-import requests
+```bash
+curl -X POST -d "action=convert&fileId=<FILE_ID>" http://localhost:8111/api.php
+```
 
-# Subir
-files = {'file': open('comic.cbr', 'rb')}
-data = {'action': 'upload'}
-response = requests.post('http://localhost:8111/api.php', 
-                        data=data, files=files)
-file_id = response.json()['data']['fileId']
+## 📂 Historial y eliminación
 
-# Convertir
-data = {'action': 'convert', 'fileId': file_id}
-response = requests.post('http://localhost:8111/api.php', data=data)
-print(response.json())
+- El historial que ves en el frontend es una mezcla entre la sesión del servidor y el `localStorage` del navegador; se sincronizan al obtener el historial.
+- Cuando el usuario elimina una entrada desde la UI, la API intentará renombrar el archivo en `converted/` añadiendo `.DELETE` antes de la extensión (p. ej. `manga.epub` → `manga.DELETE.epub`).
+- La entrada se elimina de la sesión y del `localStorage` local; el archivo físico queda marcado y disponible para descarga si conoces su nombre.
+
+Esta estrategia evita borrados accidentales y permite auditoría/recuperación manual.
+
+## ⚙️ Configuración
+
+- Ajusta el límite máximo de subida en `api.php`:
+
+```php
+private $maxFileSize = 500 * 1024 * 1024; // 500MB
+```
+
+- El proyecto incluye `docker/php-upload.ini` con límites ampliados (`600M`, `1G` de memoria, etc.). Si no usas Docker, puedes usar `.user.ini` o pasar los flags a `php` al iniciar.
+
+## 🆘 Solución de problemas (rápida)
+
+- Si `7z` devuelve "Unsupported Method", instala `unrar` para dar soporte a RAR5.
+- Si falta `ZipArchive`, instala `libzip` y habilita la extensión `zip` en PHP.
+- Revisa `/tmp/php-error.log` dentro del contenedor si ves problemas con los headers o conversiones.
+
+## 🔒 Seguridad y limitaciones
+
+- El API valida extensión y tamaño; aun así, sirve con precaución en entornos públicos.
+- No hay autenticación de usuario por defecto — la historia se guarda por sesión PHP.
+
+## 📦 Estructura del proyecto
+
+```
+. 
+├── index.html           # Frontend UI (single-file)
+├── api.php              # Backend API (PHP)
+├── uploads/             # Archivos CBR subidos (temporal)
+├── converted/           # Archivos EPUB generados
+├── docker/              # Archivos de configuración de Docker
+├── Dockerfile
+├── docker-compose.yml
+└── README.md
 ```
 
 ## 📝 Licencia
 
 Uso libre. Modifica y distribuye como desees.
 
-## 🤝 Contribuir
-
-¿Encontraste un bug o tienes una sugerencia? ¡Repórtalo!
-
-## 📞 Soporte
-
-Si necesitas ayuda:
-1. Verifica que 7z está instalado
-2. Revisa los permisos de las carpetas
-3. Comprueba que PHP está configurado correctamente
-4. Consulta los logs del servidor
-
 ---
 
-**Versión**: 1.0.0  
-**Última actualización**: Diciembre 2024
+**Última actualización**: Diciembre 2025
