@@ -7,14 +7,21 @@ RUN printf "deb http://deb.debian.org/debian bookworm main contrib non-free non-
     && printf "deb http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware\n" >> /etc/apt/sources.list \
     && apt-get update \
      && apt-get install -y --no-install-recommends \
+          libzip-dev \
          p7zip-full \
          p7zip-rar \
+         unrar \
+      && docker-php-ext-configure zip \
+      && docker-php-ext-install zip \
      && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 # Copy project files
 COPY . /app
+
+# PHP overrides for large uploads/conversions
+COPY docker/php-upload.ini /usr/local/etc/php/conf.d/uploads.ini
 
 # Ensure upload/output directories exist with permissive permissions
 RUN mkdir -p uploads converted \
