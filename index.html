@@ -87,6 +87,16 @@
             background: #ecfdf5;
         }
 
+        .drop-zone.hidden {
+            opacity: 0;
+            pointer-events: none;
+            height: 0;
+            margin: 0;
+            padding: 0;
+            border-width: 0;
+            overflow: hidden;
+        }
+
         .drop-zone.error {
             border-color: #ef4444;
             background: #fef2f2;
@@ -130,6 +140,7 @@
 
         .upload-section {
             margin-top: 30px;
+            margin-bottom: 25px;
         }
 
         .progress-container {
@@ -541,6 +552,16 @@
             }
         });
 
+        function toggleDropZone(hidden) {
+            if (hidden) {
+                dropZone.classList.add('hidden');
+                dropZone.setAttribute('aria-hidden', 'true');
+            } else {
+                dropZone.classList.remove('hidden');
+                dropZone.removeAttribute('aria-hidden');
+            }
+        }
+
         function handleFile(file) {
             // Validar tipo
             if (!file.name.toLowerCase().endsWith('.cbr')) {
@@ -590,6 +611,7 @@
                         fileSize.textContent = formatFileSize(response.data.size);
                         fileItem.classList.add('show');
                         dropZone.classList.add('success');
+                        toggleDropZone(true);
 
                         progressContainer.classList.remove('show');
                         message.classList.remove('show');
@@ -697,6 +719,7 @@
             convertBtn.style.display = 'inline-block';
             downloadBtn.style.display = 'none';
             convertBtn.disabled = false;
+            toggleDropZone(false);
         });
 
         async function fetchHistory() {
