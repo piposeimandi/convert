@@ -761,6 +761,7 @@
                             </div>
                             <div class="history-actions">
                                 <button class="btn btn-download history-download" data-file="${encodeURIComponent(item.epubName || '')}">Descargar</button>
+                                <button class="btn btn-secondary history-remove" data-file="${encodeURIComponent(item.epubName || '')}" style="margin-left:8px;">Eliminar</button>
                             </div>
                         </div>
                     `;
@@ -872,18 +873,31 @@
                 try { data = await resp.json(); } catch (_) { data = null; }
 
                 const msg = (data && data.message) ? data.message : 'No se pudo descargar el archivo';
-                // Ask user to remove entry from history
-                const remove = confirm(msg + '\n\n¿Deseas eliminar esta entrada del historial?');
-                if (remove) {
-                    await removeHistoryEntry(epub);
-                    const merged = mergeHistoryEntries(getLocalHistory(), []);
-                    renderHistory(getLocalHistory());
-                    showMessage('Entrada eliminada del historial', 'info');
+                // Show message and reveal the inline delete button so user can remove it explicitly
+                showMessage(msg, 'error');
+                // Optionally focus the delete button for that entry
+                const entry = historyList.querySelector(`[data-epub="${encodeURIComponent(epub)}"]`);
+                if (entry) {
+                    const removeBtn = entry.querySelector('.history-remove');
+                    if (removeBtn) {
+                        removeBtn.focus();
+                    }
                 }
             } catch (err) {
                 console.error('Error en descarga', err);
                 showMessage('Error al intentar descargar', 'error');
             }
+        });
+
+        // Delegated handler for explicit remove buttons
+        historyList.addEventListener('click', (e) => {
+            const rem = e.target.closest('.history-remove');
+            if (!rem) return;
+            const epub = decodeURIComponent(rem.dataset.file || '');
+            if (!epub) return;
+            e.preventDefault();
+            if (!confirm('¿Eliminar esta entrada del historial?')) return;
+            removeHistoryEntry(epub);
         });
 
         async function removeHistoryEntry(epubName) {
