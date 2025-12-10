@@ -769,18 +769,11 @@
                         progressPercent.textContent = '100%';
                         progressText.textContent = 'Conversión completada ✓';
 
-                        showMessage('Conversión completada exitosamente', 'success');
+                        // Informar al usuario y preparar UI para otro archivo
+                        showMessage('Archivo convertido — ahora puedes descargarlo desde el historial', 'success');
                         dropZone.classList.add('success');
 
-                        // Mostrar botón de descarga
-                        downloadBtn.href = response.data.downloadUrl;
-                        downloadBtn.style.display = 'inline-block';
-                        convertBtn.style.display = 'none';
-
-                        setTimeout(() => {
-                            downloadBtn.click();
-                        }, 500);
-
+                        // No iniciar descarga automática. Limpiar la selección para aceptar otro archivo.
                         addLocalHistoryEntry({
                             epubName: response.data.epubName,
                             displayName: currentFileName,
@@ -789,6 +782,17 @@
                             downloadUrl: response.data.downloadUrl
                         });
                         fetchHistory();
+
+                        // Reset UI to accept next upload
+                        currentFileId = null;
+                        currentFileName = null;
+                        fileInput.value = '';
+                        fileItem.classList.remove('show');
+                        progressContainer.classList.remove('show');
+                        convertBtn.disabled = false;
+                        convertBtn.style.display = 'inline-block';
+                        downloadBtn.style.display = 'none';
+                        toggleDropZone(false);
                     } else {
                         showMessage(response.message, 'error');
                         dropZone.classList.add('error');
@@ -1087,7 +1091,7 @@
                     } else {
                         renderHistory(current);
                     }
-                    showMessage((j && j.message) ? j.message + ' — eliminado localmente' : 'Entrada no encontrada en servidor — eliminada localmente', 'info');
+                    showMessage((j && j.message) ? j.message + ' — eliminado localmente' : 'Historial eliminado localmente', 'info');
                     return;
                 }
 
