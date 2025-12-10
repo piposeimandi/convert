@@ -1,5 +1,7 @@
 # CBR to EPUB Converter — Frontend + API
 
+![Captura de la UI](assets/screenshot.png)
+
 Aplicación ligera que incluye una **API en PHP** y un **frontend web (single-file `index.html`)** para convertir archivos CBR a EPUB compatibles con lectores electrónicos.
 
 Este repositorio contiene tanto el backend (`api.php`) como la interfaz de usuario, por lo que puedes usarlo como API desde otras aplicaciones o ejecutar la interfaz para uso interactivo.
