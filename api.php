@@ -548,12 +548,55 @@ EOX;
         }
 
         $epub = basename($epub);
-        $removed = $this->removeHistoryEntryByEpub($epub);
-        if ($removed) {
-            echo $this->response(true, 'Entrada eliminada del historial', null);
-        } else {
-            echo $this->response(false, 'No se encontró la entrada en el historial', null, 404);
+
+        // Intentar renombrar el archivo físico agregando la etiqueta .DELETE antes de la extensión
+        $filePath = $this->outputDir . '/' . $epub;
+        $renamedTo = null;
+        if (file_exists($filePath) && is_file($filePath)) {
+            // generar nombre nuevo seguro
+            if (preg_match('/\.([^.]+)$/', $epub, $m)) {
+                $ext = $m[1];
+                $base = preg_replace('/\.[^.]+$/', '', $epub);
+            } else {
+                $ext = '';
+                $base = $epub;
+            }
+
+            $candidate = $base . '.DELETE' . ($ext ? '.' . $ext : '');
+            $counter = 1;
+            while (file_exists(rtrim($this->outputDir, '/') . '/' . $candidate)) {
+                $candidate = $base . '.DELETE(' . $counter . ')' . ($ext ? '.' . $ext : '');
+                $counter++;
+            }
+
+            $newPath = rtrim($this->outputDir, '/') . '/' . $candidate;
+            if (@rename($filePath, $newPath)) {
+                $renamedTo = $candidate;
+            } else {
+                error_log('No se pudo renombrar ' . $filePath . ' a ' . $newPath);
+            }
         }
+
+        // Remover la entrada del historial si existe
+        $removedFromHistory = $this->removeHistoryEntryByEpub($epub);
+
+        if ($renamedTo && $removedFromHistory) {
+            echo $this->response(true, 'Entrada eliminada del historial y archivo marcado como DELETE', ['renamedTo' => $renamedTo]);
+            return;
+        }
+
+        if ($renamedTo && !$removedFromHistory) {
+            echo $this->response(true, 'Archivo marcado como DELETE (no había entrada de historial)', ['renamedTo' => $renamedTo]);
+            return;
+        }
+
+        if (!$renamedTo && $removedFromHistory) {
+            echo $this->response(true, 'Entrada eliminada del historial (archivo físico no encontrado)', null);
+            return;
+        }
+
+        // Ninguna acción realizada
+        echo $this->response(false, 'No se encontró la entrada en el historial ni el archivo', null, 404);
     }
 
     private function generateUUID() {
