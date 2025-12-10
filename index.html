@@ -538,7 +538,72 @@
         </div>
     </div>
 
+    <!-- Confirm modal -->
+    <div id="confirmModal" class="confirm-modal" aria-hidden="true" style="display:none;">
+        <div class="confirm-overlay" id="confirmOverlay"></div>
+        <div class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+            <div id="confirmTitle" class="confirm-title">Confirmar acción</div>
+            <div id="confirmMessage" class="confirm-body">¿Estás seguro?</div>
+            <div class="confirm-actions">
+                <button class="btn btn-secondary" id="confirmCancel">Cancelar</button>
+                <button class="btn btn-primary" id="confirmOk">Eliminar</button>
+            </div>
+        </div>
+    </div>
+
     <script>
+        /* Modal styles injected here so it's self-contained */
+        const modalStyle = document.createElement('style');
+        modalStyle.textContent = `
+        .confirm-modal { position: fixed; inset: 0; display:flex; align-items:center; justify-content:center; z-index:120; }
+        .confirm-overlay { position:absolute; inset:0; background:rgba(15,23,42,0.45); backdrop-filter: blur(2px); }
+        .confirm-dialog { position:relative; background:#fff; padding:18px; border-radius:12px; box-shadow:0 12px 40px rgba(0,0,0,0.18); width:320px; max-width:90%; z-index:10; }
+        .confirm-title{ font-weight:700; margin-bottom:8px; }
+        .confirm-body{ color:#444; font-size:14px; margin-bottom:16px; }
+        .confirm-actions{ display:flex; gap:10px; justify-content:flex-end; }
+        `;
+        document.head.appendChild(modalStyle);
+        // Modal helpers
+        function openConfirm(message, opts = {}) {
+            return new Promise((resolve) => {
+                const modal = document.getElementById('confirmModal');
+                const overlay = document.getElementById('confirmOverlay');
+                const titleEl = document.getElementById('confirmTitle');
+                const msgEl = document.getElementById('confirmMessage');
+                const btnOk = document.getElementById('confirmOk');
+                const btnCancel = document.getElementById('confirmCancel');
+
+                if (!modal || !btnOk || !btnCancel) {
+                    // fallback to native confirm
+                    resolve(window.confirm(message));
+                    return;
+                }
+
+                titleEl.textContent = opts.title || 'Confirmar acción';
+                msgEl.textContent = message || opts.message || '';
+                btnOk.textContent = opts.okText || 'Eliminar';
+                btnCancel.textContent = opts.cancelText || 'Cancelar';
+
+                function cleanup() {
+                    btnOk.removeEventListener('click', onOk);
+                    btnCancel.removeEventListener('click', onCancel);
+                    overlay.removeEventListener('click', onCancel);
+                    modal.style.display = 'none';
+                    modal.setAttribute('aria-hidden', 'true');
+                }
+
+                function onOk(e) { e.preventDefault(); cleanup(); resolve(true); }
+                function onCancel(e) { e.preventDefault(); cleanup(); resolve(false); }
+
+                btnOk.addEventListener('click', onOk);
+                btnCancel.addEventListener('click', onCancel);
+                overlay.addEventListener('click', onCancel);
+
+                modal.style.display = 'flex';
+                modal.removeAttribute('aria-hidden');
+                btnCancel.focus();
+            });
+        }
         let currentFileId = null;
         let currentFileName = null;
 
@@ -966,14 +1031,15 @@
             }
         });
 
-        // Delegated handler for explicit remove buttons
-        historyList.addEventListener('click', (e) => {
+        // Delegated handler for explicit remove buttons (uses modal)
+        historyList.addEventListener('click', async (e) => {
             const rem = e.target.closest('.history-remove');
             if (!rem) return;
             const epub = decodeURIComponent(rem.dataset.file || '');
             if (!epub) return;
             e.preventDefault();
-            if (!confirm('¿Eliminar esta entrada del historial?')) return;
+            const ok = await openConfirm('¿Eliminar esta entrada del historial?', { title: 'Eliminar entrada', okText: 'Eliminar', cancelText: 'Cancelar' });
+            if (!ok) return;
             removeHistoryEntry(epub);
         });
 
