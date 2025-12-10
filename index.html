@@ -754,14 +754,16 @@
                 const dateLabel = formatDateTime(item.createdAt);
                 const url = item.downloadUrl || `api.php?action=download&file=${encodeURIComponent(item.epubName || '')}`;
                 return `
-                    <div class="history-item">
-                        <div class="history-info">
-                            <div class="history-name">${name}</div>
-                            <div class="history-meta">${sizeLabel} • ${dateLabel}</div>
+                        <div class="history-item" data-epub="${encodeURIComponent(item.epubName || '')}">
+                            <div class="history-info">
+                                <div class="history-name">${name}</div>
+                                <div class="history-meta">${sizeLabel} • ${dateLabel}</div>
+                            </div>
+                            <div class="history-actions">
+                                <button class="btn btn-download history-download" data-file="${encodeURIComponent(item.epubName || '')}">Descargar</button>
+                            </div>
                         </div>
-                        <a class="btn btn-download" href="${url}">Descargar</a>
-                    </div>
-                `;
+                    `;
             }).join('');
         }
 
@@ -837,6 +839,73 @@
         }
 
         fetchHistory();
+
+        // Delegated handler for history downloads (prevents leaving the page)
+        historyList.addEventListener('click', async (e) => {
+            const btn = e.target.closest('.history-download');
+            if (!btn) return;
+            const encoded = btn.dataset.file || '';
+            const epub = decodeURIComponent(encoded);
+            if (!epub) return;
+
+            e.preventDefault();
+            try {
+                const resp = await fetch(`api.php?action=download&file=${encodeURIComponent(epub)}`, { credentials: 'same-origin' });
+
+                const contentType = resp.headers.get('Content-Type') || '';
+                if (resp.ok && contentType.indexOf('application/epub+zip') !== -1) {
+                    const blob = await resp.blob();
+                    const a = document.createElement('a');
+                    const url = URL.createObjectURL(blob);
+                    a.href = url;
+                    a.download = epub.split('/').pop() || epub;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    URL.revokeObjectURL(url);
+                    showMessage('Descarga iniciada', 'success');
+                    return;
+                }
+
+                // If not an EPUB, try parse JSON error message
+                let data = null;
+                try { data = await resp.json(); } catch (_) { data = null; }
+
+                const msg = (data && data.message) ? data.message : 'No se pudo descargar el archivo';
+                // Ask user to remove entry from history
+                const remove = confirm(msg + '\n\n¿Deseas eliminar esta entrada del historial?');
+                if (remove) {
+                    await removeHistoryEntry(epub);
+                    const merged = mergeHistoryEntries(getLocalHistory(), []);
+                    renderHistory(getLocalHistory());
+                    showMessage('Entrada eliminada del historial', 'info');
+                }
+            } catch (err) {
+                console.error('Error en descarga', err);
+                showMessage('Error al intentar descargar', 'error');
+            }
+        });
+
+        async function removeHistoryEntry(epubName) {
+            try {
+                const form = new FormData();
+                form.append('action', 'remove_history');
+                form.append('epubName', epubName);
+                const res = await fetch('api.php', { method: 'POST', body: form, credentials: 'same-origin' });
+                const j = await res.json();
+                if (j.success) {
+                    // remove from localStorage too
+                    const current = getLocalHistory().filter(i => (i.epubName || i.downloadUrl || '') !== epubName);
+                    saveLocalHistory(current);
+                    renderHistory(current);
+                } else {
+                    showMessage(j.message || 'No se pudo eliminar del historial', 'error');
+                }
+            } catch (e) {
+                console.error('Error removing history', e);
+                showMessage('Error al borrar del historial', 'error');
+            }
+        }
     </script>
 </body>
 </html>

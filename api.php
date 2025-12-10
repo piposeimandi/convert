@@ -59,6 +59,8 @@ class CBRtoEPUBAPI {
                     return $this->handleUpload();
                 case 'convert':
                     return $this->handleConvert();
+                case 'remove_history':
+                    return $this->handleRemoveHistory();
                 default:
                     echo $this->response(false, 'Acción no válida', null, 400);
             }
@@ -527,6 +529,31 @@ EOX;
             }
         }
         return false;
+    }
+
+    private function removeHistoryEntryByEpub($epubName) {
+        $history = $this->getHistory();
+        $new = array_values(array_filter($history, function($entry) use ($epubName) {
+            return (($entry['epubName'] ?? null) !== $epubName) && (($entry['downloadUrl'] ?? null) !== $epubName);
+        }));
+        $this->saveHistory($new);
+        return count($history) !== count($new);
+    }
+
+    private function handleRemoveHistory() {
+        $epub = $_POST['epubName'] ?? null;
+        if (!$epub) {
+            echo $this->response(false, 'Nombre de EPUB faltante', null, 400);
+            return;
+        }
+
+        $epub = basename($epub);
+        $removed = $this->removeHistoryEntryByEpub($epub);
+        if ($removed) {
+            echo $this->response(true, 'Entrada eliminada del historial', null);
+        } else {
+            echo $this->response(false, 'No se encontró la entrada en el historial', null, 404);
+        }
     }
 
     private function generateUUID() {
