@@ -1,5 +1,10 @@
 <?php
-error_log('Acción recibida: ' . $_POST['action']);
+ob_start();
+session_start();
+ini_set('display_errors', '0');
+ini_set('log_errors', '1');
+$actionLogged = $_POST['action'] ?? $_GET['action'] ?? 'sin-accion';
+error_log('Acción recibida: ' . $actionLogged);
 /**
  * CBR to EPUB Converter API
  * Endpoint para convertir archivos CBR a EPUB
@@ -21,6 +26,8 @@ class CBRtoEPUBAPI {
     private $outputDir = './converted';
     private $tempDir;
     private $maxFileSize = 500 * 1024 * 1024; // 500MB
+    private $historyLimit = 20;
+    private array $commandCache = [];
 
     public function __construct() {
         $this->tempDir = sys_get_temp_dir();
@@ -38,7 +45,7 @@ class CBRtoEPUBAPI {
             'success' => $success,
             'message' => $message,
             'data' => $data
-        ]);
+        ], JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
     }
 
     public function handleRequest() {
@@ -52,6 +59,8 @@ class CBRtoEPUBAPI {
                     return $this->handleUpload();
                 case 'convert':
                     return $this->handleConvert();
+                case 'remove_history':
+                    return $this->handleRemoveHistory();
                 default:
                     echo $this->response(false, 'Acción no válida', null, 400);
             }
@@ -61,6 +70,8 @@ class CBRtoEPUBAPI {
                 switch ($action) {
                     case 'download':
                         return $this->handleDownload();
+                    case 'history':
+                        return $this->handleHistory();
                     default:
                         echo $this->response(false, 'Acción no válida', null, 400);
                 }
@@ -130,11 +141,16 @@ class CBRtoEPUBAPI {
 
         $cbrFile = $files[0];
         $fileName = basename($cbrFile);
-        $epubName = pathinfo($fileName, PATHINFO_FILENAME) . '.epub';
+        $prettyBaseName = $this->stripExtension($this->sanitizeDisplayName($fileName));
+        $epubName = $this->ensureUniqueFileName(
+            ($prettyBaseName ?: pathinfo($fileName, PATHINFO_FILENAME)) . '.epub',
+            $this->outputDir
+        );
         $epubPath = $this->outputDir . '/' . $epubName;
 
         try {
-            $this->convertCBR($cbrFile, $epubPath);
+            $bookTitle = $prettyBaseName ?: pathinfo($epubName, PATHINFO_FILENAME);
+            $this->convertCBR($cbrFile, $epubPath, $bookTitle);
 
             if (!file_exists($epubPath)) {
                 throw new Exception('El archivo EPUB no se creó');
@@ -143,34 +159,34 @@ class CBRtoEPUBAPI {
             // Limpiar archivo CBR
             @unlink($cbrFile);
 
+            $epubSize = filesize($epubPath);
+            $downloadUrl = 'api.php?action=download&file=' . urlencode($epubName);
+
+            $this->appendHistory([
+                'epubName' => $epubName,
+                'displayName' => $epubName,
+                'size' => $epubSize,
+                'createdAt' => date('c'),
+                'downloadUrl' => $downloadUrl
+            ]);
+
             echo $this->response(true, 'Conversión exitosa', [
                 'epubName' => $epubName,
-                'size' => filesize($epubPath),
-                'downloadUrl' => 'api.php?action=download&file=' . urlencode($epubName)
+                'size' => $epubSize,
+                'downloadUrl' => $downloadUrl
             ]);
         } catch (Exception $e) {
             echo $this->response(false, 'Error en conversión: ' . $e->getMessage(), null, 500);
         }
     }
 
-    private function convertCBR($cbrFile, $epubPath) {
+    private function convertCBR($cbrFile, $epubPath, $bookTitle) {
         $tempExtractDir = $this->tempDir . '/cbr_extract_' . uniqid();
         @mkdir($tempExtractDir, 0755, true);
 
         try {
             // Extraer CBR
-            $cmd = sprintf(
-                '7z x %s -o%s -aoa 2>&1',
-                escapeshellarg($cbrFile),
-                escapeshellarg($tempExtractDir)
-            );
-
-            exec($cmd, $output, $returnCode);
-
-            if ($returnCode !== 0) {
-                $errorOutput = trim(implode("\n", $output));
-                throw new Exception("Error al extraer el CBR (código {$returnCode}). ¿Tiene 7-Zip soporte RAR?\n{$errorOutput}");
-            }
+            $this->extractArchive($cbrFile, $tempExtractDir);
 
             if (!is_dir($tempExtractDir) || count(scandir($tempExtractDir)) <= 2) {
                 throw new Exception('No se pudo extraer el archivo CBR');
@@ -190,11 +206,104 @@ class CBRtoEPUBAPI {
             }
 
             // Crear EPUB
-            $this->createEPUB($images, $epubPath, pathinfo($cbrFile, PATHINFO_FILENAME));
+            $this->createEPUB($images, $epubPath, $bookTitle);
         } finally {
             // Limpiar
             $this->removeDir($tempExtractDir);
         }
+    }
+
+    private function extractArchive($sourceFile, $destination) {
+        [$success, $code, $output] = $this->executeShellCommand(
+            $this->build7zCommand($sourceFile, $destination)
+        );
+
+        if ($success) {
+            return;
+        }
+
+        $needsUnrar = $this->needsUnrarFallback($output);
+        $hasUnrar = $this->commandExists('unrar');
+
+        if ($hasUnrar) {
+            [$unrarSuccess, $unrarCode, $unrarOutput] = $this->executeShellCommand(
+                $this->buildUnrarCommand($sourceFile, $destination)
+            );
+
+            if ($unrarSuccess) {
+                return;
+            }
+
+            $code = $unrarCode;
+            $output = trim($output . "\n" . $unrarOutput);
+        }
+
+        $hint = ($needsUnrar && !$hasUnrar)
+            ? 'Instala la utilidad "unrar" (RARLAB) o habilita soporte RAR5 para archivos CBR modernos.'
+            : 'Verifica que el archivo CBR no esté corrupto o protegido con contraseña.';
+
+        $details = $output ? "\n{$output}" : '';
+        throw new Exception("Error al extraer el CBR (código {$code}). {$hint}{$details}");
+    }
+
+    private function executeShellCommand($command) {
+        $output = [];
+        exec($command, $output, $returnCode);
+        $outputText = trim(implode("\n", $output));
+
+        if ($returnCode !== 0) {
+            error_log(sprintf('[CBRtoEPUB] Comando falló (%d): %s', $returnCode, $command));
+            if ($outputText) {
+                error_log($outputText);
+            }
+        }
+
+        return [$returnCode === 0, $returnCode, $outputText];
+    }
+
+    private function needsUnrarFallback($output) {
+        if (!$output) {
+            return false;
+        }
+
+        $patterns = ['Unsupported Method', 'RAR version', 'encrypted', 'RAR5'];
+        foreach ($patterns as $pattern) {
+            if (stripos($output, $pattern) !== false) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function commandExists($command) {
+        if (array_key_exists($command, $this->commandCache)) {
+            return $this->commandCache[$command];
+        }
+
+        $output = [];
+        $returnCode = 0;
+        @exec('command -v ' . escapeshellarg($command), $output, $returnCode);
+        $exists = ($returnCode === 0);
+        $this->commandCache[$command] = $exists;
+        return $exists;
+    }
+
+    private function build7zCommand($sourceFile, $destination) {
+        return sprintf(
+            '7z x %s -o%s -aoa 2>&1',
+            escapeshellarg($sourceFile),
+            escapeshellarg($destination)
+        );
+    }
+
+    private function buildUnrarCommand($sourceFile, $destination) {
+        $targetDir = rtrim($destination, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
+        return sprintf(
+            'unrar x -o+ -y %s %s 2>&1',
+            escapeshellarg($sourceFile),
+            escapeshellarg($targetDir)
+        );
     }
 
     private function getImages($folder) {
@@ -367,6 +476,129 @@ EOX;
         $zip->close();
     }
 
+    private function getHistory() {
+        if (!isset($_SESSION['history']) || !is_array($_SESSION['history'])) {
+            $_SESSION['history'] = [];
+        }
+        return $_SESSION['history'];
+    }
+
+    private function saveHistory(array $history) {
+        $_SESSION['history'] = $history;
+    }
+
+    private function appendHistory(array $entry) {
+        $history = $this->getHistory();
+        array_unshift($history, $entry);
+        if (count($history) > $this->historyLimit) {
+            $history = array_slice($history, 0, $this->historyLimit);
+        }
+        $this->saveHistory($history);
+    }
+
+    private function sanitizeDisplayName($fileName) {
+        return preg_replace('/^[a-f0-9]+_/', '', $fileName);
+    }
+
+    private function stripExtension($fileName) {
+        return preg_replace('/\.[^.]+$/', '', $fileName);
+    }
+
+    private function ensureUniqueFileName($fileName, $directory) {
+        $pathInfo = pathinfo($fileName);
+        $base = $pathInfo['filename'] ?? 'archivo';
+        $ext = isset($pathInfo['extension']) && $pathInfo['extension'] !== ''
+            ? '.' . $pathInfo['extension']
+            : '';
+
+        $candidate = $base . $ext;
+        $counter = 1;
+
+        while (file_exists(rtrim($directory, '/') . '/' . $candidate)) {
+            $candidate = sprintf('%s (%d)%s', $base, $counter, $ext);
+            $counter++;
+        }
+
+        return $candidate;
+    }
+
+    private function isInHistory($fileName) {
+        foreach ($this->getHistory() as $entry) {
+            if (($entry['epubName'] ?? null) === $fileName) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private function removeHistoryEntryByEpub($epubName) {
+        $history = $this->getHistory();
+        $new = array_values(array_filter($history, function($entry) use ($epubName) {
+            return (($entry['epubName'] ?? null) !== $epubName) && (($entry['downloadUrl'] ?? null) !== $epubName);
+        }));
+        $this->saveHistory($new);
+        return count($history) !== count($new);
+    }
+
+    private function handleRemoveHistory() {
+        $epub = $_POST['epubName'] ?? null;
+        if (!$epub) {
+            echo $this->response(false, 'Nombre de EPUB faltante', null, 400);
+            return;
+        }
+
+        $epub = basename($epub);
+
+        // Intentar renombrar el archivo físico agregando la etiqueta .DELETE antes de la extensión
+        $filePath = $this->outputDir . '/' . $epub;
+        $renamedTo = null;
+        if (file_exists($filePath) && is_file($filePath)) {
+            // generar nombre nuevo seguro
+            if (preg_match('/\.([^.]+)$/', $epub, $m)) {
+                $ext = $m[1];
+                $base = preg_replace('/\.[^.]+$/', '', $epub);
+            } else {
+                $ext = '';
+                $base = $epub;
+            }
+
+            $candidate = $base . '.DELETE' . ($ext ? '.' . $ext : '');
+            $counter = 1;
+            while (file_exists(rtrim($this->outputDir, '/') . '/' . $candidate)) {
+                $candidate = $base . '.DELETE(' . $counter . ')' . ($ext ? '.' . $ext : '');
+                $counter++;
+            }
+
+            $newPath = rtrim($this->outputDir, '/') . '/' . $candidate;
+            if (@rename($filePath, $newPath)) {
+                $renamedTo = $candidate;
+            } else {
+                error_log('No se pudo renombrar ' . $filePath . ' a ' . $newPath);
+            }
+        }
+
+        // Remover la entrada del historial si existe
+        $removedFromHistory = $this->removeHistoryEntryByEpub($epub);
+
+        if ($renamedTo && $removedFromHistory) {
+            echo $this->response(true, 'Entrada eliminada del historial y archivo marcado como DELETE', ['renamedTo' => $renamedTo]);
+            return;
+        }
+
+        if ($renamedTo && !$removedFromHistory) {
+            echo $this->response(true, 'Archivo marcado como DELETE (no había entrada de historial)', ['renamedTo' => $renamedTo]);
+            return;
+        }
+
+        if (!$renamedTo && $removedFromHistory) {
+            echo $this->response(true, 'Entrada eliminada del historial (archivo físico no encontrado)', null);
+            return;
+        }
+
+        // Ninguna acción realizada
+        echo $this->response(false, 'No se encontró la entrada en el historial ni el archivo', null, 404);
+    }
+
     private function generateUUID() {
         return sprintf(
             '%04x%04x-%04x-%04x-%04x-%04x%04x%04x',
@@ -408,15 +640,20 @@ EOX;
             return;
         }
 
+        // Nota: ya no exigimos que el archivo esté en el historial de sesión
+        // para permitir la descarga. Eliminar una entrada del historial solo
+        // afecta la interfaz del usuario; el archivo físico se mantiene.
+
         header('Content-Type: application/epub+zip');
         header('Content-Disposition: attachment; filename="' . $fileName . '"');
         header('Content-Length: ' . filesize($filePath));
 
         readfile($filePath);
-        
-        // Limpiar archivo después de descargar
-        @unlink($filePath);
         exit;
+    }
+
+    private function handleHistory() {
+        echo $this->response(true, 'Historial obtenido', $this->getHistory());
     }
 
     private function handleStatus() {

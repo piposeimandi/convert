@@ -1,0 +1,17 @@
+# Ignore uploaded comics and generated EPUB files
+/uploads/
+/converted/
+*.epub
+
+# OS / editor files
+.DS_Store
+.idea/
+.vscode/
+
+# Logs and runtime files
+php-error.log
+*.log
+
+# Dependency dirs
+/node_modules/
+/vendor/

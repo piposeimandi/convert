@@ -11,12 +11,17 @@ php -v
 # Verificar 7z (si no lo tienes, instálalo)
 7z --version
 
+# Verificar unrar (para CBR con RAR5)
+unrar --version
+
 # Si no lo tienes instalado:
 # Ubuntu/Debian
 sudo apt-get install p7zip-full
+sudo apt-get install unrar
 
 # macOS
 brew install p7zip
+brew install unar
 
 # Windows: Descarga desde https://www.7-zip.org/
 ```
@@ -65,6 +70,8 @@ open http://localhost:8111/index.html
 # o
 http://localhost:8111/index.html
 ```
+
+> ℹ️ **Límites elevados**: El archivo `.user.ini` del proyecto ya configura `upload_max_filesize` y `post_max_size` en 600MB. Si tu entorno ignora `.user.ini`, ejecuta `php -d upload_max_filesize=600M -d post_max_size=600M -d memory_limit=1G -S localhost:8111` para evitar el error `POST Content-Length ... exceeds the limit` con cómics grandes.
 
 ### 3️⃣ Opción C: Script Demo (Interactivo)
 #️⃣ Opción D: Docker Compose (Entorno listo para producción ligera)

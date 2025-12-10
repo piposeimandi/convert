@@ -87,6 +87,16 @@
             background: #ecfdf5;
         }
 
+        .drop-zone.hidden {
+            opacity: 0;
+            pointer-events: none;
+            height: 0;
+            margin: 0;
+            padding: 0;
+            border-width: 0;
+            overflow: hidden;
+        }
+
         .drop-zone.error {
             border-color: #ef4444;
             background: #fef2f2;
@@ -130,6 +140,7 @@
 
         .upload-section {
             margin-top: 30px;
+            margin-bottom: 25px;
         }
 
         .progress-container {
@@ -231,6 +242,74 @@
             display: flex;
             gap: 10px;
             margin-left: 15px;
+        }
+
+        .history-section {
+            margin-top: 40px;
+            padding-top: 30px;
+            border-top: 1px solid #e5e7eb;
+        }
+
+        .history-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .history-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .history-subtitle {
+            font-size: 12px;
+            color: #777;
+            margin-top: 2px;
+        }
+
+        .history-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .history-item {
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            padding: 15px;
+            background: #fdfdfd;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .history-info {
+            flex: 1;
+        }
+
+        .history-name {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 4px;
+        }
+
+        .history-meta {
+            font-size: 12px;
+            color: #777;
+        }
+
+        .history-empty {
+            font-size: 13px;
+            color: #777;
+            background: #f3f4f6;
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+            margin-bottom: 10px;
         }
 
         .btn {
@@ -338,6 +417,62 @@
             .btn {
                 flex: 1;
             }
+
+            .history-header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .history-item {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .history-section .btn {
+                width: 100%;
+            }
+        }
+    </style>
+    <style>
+        /* Popup shown above a history item when download fails */
+        .history-item { position: relative; }
+        .history-popup {
+            position: absolute;
+            bottom: calc(100% + 8px);
+            left: 0;
+            background: #fff;
+            color: #222;
+            border: 1px solid #ddd;
+            box-shadow: 0 6px 18px rgba(0,0,0,0.08);
+            padding: 10px 12px;
+            border-radius: 6px;
+            z-index: 60;
+            min-width: 220px;
+            font-size: 13px;
+        }
+        .history-popup::after{
+            content: '';
+            position: absolute;
+            left: 12px;
+            bottom: -8px;
+            width: 0;
+            height: 0;
+            border-left: 8px solid transparent;
+            border-right: 8px solid transparent;
+            border-top: 8px solid #fff;
+            filter: drop-shadow(0 2px 2px rgba(0,0,0,0.04));
+        }
+        .history-popup .popup-msg{ margin-bottom:8px; }
+        .history-popup .popup-actions{ display:flex; gap:8px; justify-content:flex-end; }
+        .history-popup .btn { padding:6px 9px; font-size:13px; border-radius:4px; cursor:pointer; }
+        .history-popup .btn.secondary{ background:#f3f4f6; border:1px solid #e5e7eb; }
+        .history-popup .btn.danger{ background:#ef4444; color:#fff; border:1px solid #ef4444; }
+
+        /* removal animation */
+        .history-item.removing{
+            opacity: 0;
+            transform: translateX(18px) scale(0.98);
+            transition: all 260ms ease;
         }
     </style>
 </head>
@@ -386,14 +521,93 @@
             </div>
         </div>
 
+        <div class="history-section">
+            <div class="history-header">
+                <div>
+                    <div class="history-title">Historial reciente</div>
+                    <div class="history-subtitle">Solo tú puedes ver los EPUB generados en este navegador.</div>
+                </div>
+                <button class="btn btn-secondary" id="refreshHistoryBtn">Actualizar</button>
+            </div>
+            <div class="history-empty" id="historyEmpty">Aún no convertiste archivos.</div>
+            <div class="history-list" id="historyList"></div>
+        </div>
+
         <div class="footer">
             <p>💡 Tip: Puedes convertir múltiples archivos uno a la vez</p>
         </div>
     </div>
 
+    <!-- Confirm modal -->
+    <div id="confirmModal" class="confirm-modal" aria-hidden="true" style="display:none;">
+        <div class="confirm-overlay" id="confirmOverlay"></div>
+        <div class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+            <div id="confirmTitle" class="confirm-title">Confirmar acción</div>
+            <div id="confirmMessage" class="confirm-body">¿Estás seguro?</div>
+            <div class="confirm-actions">
+                <button class="btn btn-secondary" id="confirmCancel">Cancelar</button>
+                <button class="btn btn-primary" id="confirmOk">Eliminar</button>
+            </div>
+        </div>
+    </div>
+
     <script>
+        /* Modal styles injected here so it's self-contained */
+        const modalStyle = document.createElement('style');
+        modalStyle.textContent = `
+        .confirm-modal { position: fixed; inset: 0; display:flex; align-items:center; justify-content:center; z-index:120; }
+        .confirm-overlay { position:absolute; inset:0; background:rgba(15,23,42,0.45); backdrop-filter: blur(2px); }
+        .confirm-dialog { position:relative; background:#fff; padding:18px; border-radius:12px; box-shadow:0 12px 40px rgba(0,0,0,0.18); width:320px; max-width:90%; z-index:10; }
+        .confirm-title{ font-weight:700; margin-bottom:8px; }
+        .confirm-body{ color:#444; font-size:14px; margin-bottom:16px; }
+        .confirm-actions{ display:flex; gap:10px; justify-content:flex-end; }
+        `;
+        document.head.appendChild(modalStyle);
+        // Modal helpers
+        function openConfirm(message, opts = {}) {
+            return new Promise((resolve) => {
+                const modal = document.getElementById('confirmModal');
+                const overlay = document.getElementById('confirmOverlay');
+                const titleEl = document.getElementById('confirmTitle');
+                const msgEl = document.getElementById('confirmMessage');
+                const btnOk = document.getElementById('confirmOk');
+                const btnCancel = document.getElementById('confirmCancel');
+
+                if (!modal || !btnOk || !btnCancel) {
+                    // fallback to native confirm
+                    resolve(window.confirm(message));
+                    return;
+                }
+
+                titleEl.textContent = opts.title || 'Confirmar acción';
+                msgEl.textContent = message || opts.message || '';
+                btnOk.textContent = opts.okText || 'Eliminar';
+                btnCancel.textContent = opts.cancelText || 'Cancelar';
+
+                function cleanup() {
+                    btnOk.removeEventListener('click', onOk);
+                    btnCancel.removeEventListener('click', onCancel);
+                    overlay.removeEventListener('click', onCancel);
+                    modal.style.display = 'none';
+                    modal.setAttribute('aria-hidden', 'true');
+                }
+
+                function onOk(e) { e.preventDefault(); cleanup(); resolve(true); }
+                function onCancel(e) { e.preventDefault(); cleanup(); resolve(false); }
+
+                btnOk.addEventListener('click', onOk);
+                btnCancel.addEventListener('click', onCancel);
+                overlay.addEventListener('click', onCancel);
+
+                modal.style.display = 'flex';
+                modal.removeAttribute('aria-hidden');
+                btnCancel.focus();
+            });
+        }
         let currentFileId = null;
         let currentFileName = null;
+
+        const HISTORY_KEY = 'cbr-history';
 
         const dropZone = document.getElementById('dropZone');
         const fileInput = document.getElementById('fileInput');
@@ -408,6 +622,16 @@
         const convertBtn = document.getElementById('convertBtn');
         const removeBtn = document.getElementById('removeBtn');
         const downloadBtn = document.getElementById('downloadBtn');
+        const historyList = document.getElementById('historyList');
+        const historyEmpty = document.getElementById('historyEmpty');
+        const refreshHistoryBtn = document.getElementById('refreshHistoryBtn');
+
+        refreshHistoryBtn.addEventListener('click', () => fetchHistory());
+
+        const initialHistory = getLocalHistory();
+        if (initialHistory.length) {
+            renderHistory(initialHistory);
+        }
 
         // Drag and drop
         dropZone.addEventListener('dragover', (e) => {
@@ -434,6 +658,16 @@
                 handleFile(e.target.files[0]);
             }
         });
+
+        function toggleDropZone(hidden) {
+            if (hidden) {
+                dropZone.classList.add('hidden');
+                dropZone.setAttribute('aria-hidden', 'true');
+            } else {
+                dropZone.classList.remove('hidden');
+                dropZone.removeAttribute('aria-hidden');
+            }
+        }
 
         function handleFile(file) {
             // Validar tipo
@@ -484,6 +718,7 @@
                         fileSize.textContent = formatFileSize(response.data.size);
                         fileItem.classList.add('show');
                         dropZone.classList.add('success');
+                        toggleDropZone(true);
 
                         progressContainer.classList.remove('show');
                         message.classList.remove('show');
@@ -534,17 +769,30 @@
                         progressPercent.textContent = '100%';
                         progressText.textContent = 'Conversión completada ✓';
 
-                        showMessage('Conversión completada exitosamente', 'success');
+                        // Informar al usuario y preparar UI para otro archivo
+                        showMessage('Archivo convertido — ahora puedes descargarlo desde el historial', 'success');
                         dropZone.classList.add('success');
 
-                        // Mostrar botón de descarga
-                        downloadBtn.href = response.data.downloadUrl;
-                        downloadBtn.style.display = 'inline-block';
-                        convertBtn.style.display = 'none';
+                        // No iniciar descarga automática. Limpiar la selección para aceptar otro archivo.
+                        addLocalHistoryEntry({
+                            epubName: response.data.epubName,
+                            displayName: currentFileName,
+                            size: response.data.size,
+                            createdAt: new Date().toISOString(),
+                            downloadUrl: response.data.downloadUrl
+                        });
+                        fetchHistory();
 
-                        setTimeout(() => {
-                            downloadBtn.click();
-                        }, 500);
+                        // Reset UI to accept next upload
+                        currentFileId = null;
+                        currentFileName = null;
+                        fileInput.value = '';
+                        fileItem.classList.remove('show');
+                        progressContainer.classList.remove('show');
+                        convertBtn.disabled = false;
+                        convertBtn.style.display = 'inline-block';
+                        downloadBtn.style.display = 'none';
+                        toggleDropZone(false);
                     } else {
                         showMessage(response.message, 'error');
                         dropZone.classList.add('error');
@@ -582,7 +830,92 @@
             convertBtn.style.display = 'inline-block';
             downloadBtn.style.display = 'none';
             convertBtn.disabled = false;
+            toggleDropZone(false);
         });
+
+        async function fetchHistory() {
+            try {
+                const response = await fetch('api.php?action=history', { credentials: 'same-origin' });
+                const data = await response.json();
+                if (data.success) {
+                    const merged = mergeHistoryEntries(data.data || [], getLocalHistory());
+                    saveLocalHistory(merged);
+                    renderHistory(merged);
+                } else {
+                    showMessage(data.message, 'error');
+                    renderHistory(getLocalHistory());
+                }
+            } catch (error) {
+                console.error('Error al obtener historial', error);
+                renderHistory(getLocalHistory());
+            }
+        }
+
+        function renderHistory(items) {
+            if (!items || items.length === 0) {
+                historyEmpty.style.display = 'block';
+                historyList.innerHTML = '';
+                return;
+            }
+
+            historyEmpty.style.display = 'none';
+            historyList.innerHTML = items.map(item => {
+                const name = (item.displayName || item.epubName || 'Archivo');
+                const sizeLabel = formatFileSize(item.size || 0);
+                const dateLabel = formatDateTime(item.createdAt);
+                const url = item.downloadUrl || `api.php?action=download&file=${encodeURIComponent(item.epubName || '')}`;
+                return `
+                        <div class="history-item" data-epub="${encodeURIComponent(item.epubName || '')}">
+                            <div class="history-info">
+                                <div class="history-name">${name}</div>
+                                <div class="history-meta">${sizeLabel} • ${dateLabel}</div>
+                            </div>
+                            <div class="history-actions">
+                                <button class="btn btn-download history-download" data-file="${encodeURIComponent(item.epubName || '')}">Descargar</button>
+                                <button class="btn btn-secondary history-remove" data-file="${encodeURIComponent(item.epubName || '')}" style="margin-left:8px;">Eliminar</button>
+                            </div>
+                        </div>
+                    `;
+            }).join('');
+        }
+
+        function showHistoryPopup(entryEl, text, epub) {
+            if (!entryEl) {
+                showMessage(text, 'error');
+                return;
+            }
+            // Remove any existing popup in this entry
+            const existing = entryEl.querySelector('.history-popup');
+            if (existing) existing.remove();
+
+            const popup = document.createElement('div');
+            popup.className = 'history-popup';
+            popup.innerHTML = `<div class="popup-msg">${escapeHtml(text)}</div>
+                               <div class="popup-actions">
+                                 <button class="btn secondary popup-close">Cerrar</button>
+                                 <button class="btn danger popup-delete">Eliminar</button>
+                               </div>`;
+
+            // clicking close removes popup
+            popup.querySelector('.popup-close').addEventListener('click', () => popup.remove());
+
+            // delete triggers removal from server + animated removal
+            popup.querySelector('.popup-delete').addEventListener('click', async (ev) => {
+                ev.preventDefault();
+                popup.querySelector('.popup-delete').disabled = true;
+                await removeHistoryEntry(epub, { animate: true });
+                popup.remove();
+            });
+
+            entryEl.appendChild(popup);
+            // auto-dismiss after 8 seconds
+            setTimeout(() => { if (popup.parentNode) popup.remove(); }, 8000);
+        }
+
+        function escapeHtml(str){
+            if (!str) return '';
+            return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
 
         function showMessage(text, type) {
             message.textContent = text;
@@ -598,6 +931,176 @@
             const sizes = ['Bytes', 'KB', 'MB', 'GB'];
             const i = Math.floor(Math.log(bytes) / Math.log(k));
             return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+        }
+
+        function formatDateTime(value) {
+            if (!value) return '';
+            try {
+                const date = new Date(value);
+                return date.toLocaleString();
+            } catch (e) {
+                return value;
+            }
+        }
+
+        function getLocalHistory() {
+            try {
+                const raw = localStorage.getItem(HISTORY_KEY);
+                if (!raw) return [];
+                const parsed = JSON.parse(raw);
+                return Array.isArray(parsed) ? parsed : [];
+            } catch (e) {
+                return [];
+            }
+        }
+
+        function saveLocalHistory(items) {
+            try {
+                localStorage.setItem(HISTORY_KEY, JSON.stringify((items || []).slice(0, 20)));
+            } catch (e) {
+                console.warn('No se pudo guardar el historial local', e);
+            }
+        }
+
+        function mergeHistoryEntries(primary = [], secondary = []) {
+            const map = new Map();
+            [...primary, ...secondary].forEach(item => {
+                if (!item) return;
+                const key = item.epubName || item.downloadUrl || item.displayName;
+                if (!key) return;
+                if (!map.has(key)) {
+                    map.set(key, item);
+                } else {
+                    map.set(key, { ...map.get(key), ...item });
+                }
+            });
+            return Array.from(map.values()).sort((a, b) => {
+                const dateA = new Date(a.createdAt || 0).getTime();
+                const dateB = new Date(b.createdAt || 0).getTime();
+                return dateB - dateA;
+            }).slice(0, 20);
+        }
+
+        function addLocalHistoryEntry(entry) {
+            if (!entry || (!entry.epubName && !entry.downloadUrl)) return;
+            const merged = mergeHistoryEntries([entry], getLocalHistory());
+            saveLocalHistory(merged);
+            renderHistory(merged);
+        }
+
+        fetchHistory();
+
+        // Delegated handler for history downloads (prevents leaving the page)
+        historyList.addEventListener('click', async (e) => {
+            const btn = e.target.closest('.history-download');
+            if (!btn) return;
+            const encoded = btn.dataset.file || '';
+            const epub = decodeURIComponent(encoded);
+            if (!epub) return;
+
+            e.preventDefault();
+            try {
+                const resp = await fetch(`api.php?action=download&file=${encodeURIComponent(epub)}`, { credentials: 'same-origin' });
+
+                const contentType = resp.headers.get('Content-Type') || '';
+                if (resp.ok && contentType.indexOf('application/epub+zip') !== -1) {
+                    const blob = await resp.blob();
+                    const a = document.createElement('a');
+                    const url = URL.createObjectURL(blob);
+                    a.href = url;
+                    a.download = epub.split('/').pop() || epub;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    URL.revokeObjectURL(url);
+                    showMessage('Descarga iniciada', 'success');
+                    return;
+                }
+
+                // If not an EPUB, try parse JSON error message
+                let data = null;
+                try { data = await resp.json(); } catch (_) { data = null; }
+
+                const msg = (data && data.message) ? data.message : 'No se pudo descargar el archivo';
+                // Show an inline popup above the specific history item with actions
+                const entry = historyList.querySelector(`[data-epub="${encodeURIComponent(epub)}"]`);
+                if (entry) {
+                    showHistoryPopup(entry, msg, epub);
+                } else {
+                    showMessage(msg, 'error');
+                }
+            } catch (err) {
+                console.error('Error en descarga', err);
+                showMessage('Error al intentar descargar', 'error');
+            }
+        });
+
+        // Delegated handler for explicit remove buttons (uses modal)
+        historyList.addEventListener('click', async (e) => {
+            const rem = e.target.closest('.history-remove');
+            if (!rem) return;
+            const epub = decodeURIComponent(rem.dataset.file || '');
+            if (!epub) return;
+            e.preventDefault();
+            const ok = await openConfirm('¿Eliminar esta entrada del historial?', { title: 'Eliminar entrada', okText: 'Eliminar', cancelText: 'Cancelar' });
+            if (!ok) return;
+            removeHistoryEntry(epub);
+        });
+
+        async function removeHistoryEntry(epubName, opts = { animate: false }) {
+            try {
+                const form = new FormData();
+                form.append('action', 'remove_history');
+                form.append('epubName', epubName);
+                const res = await fetch('api.php', { method: 'POST', body: form, credentials: 'same-origin' });
+                let j = null;
+                try { j = await res.json(); } catch (_) { j = null; }
+
+                // If server reports success -> remove locally and animate
+                if (res.ok && j && j.success) {
+                    const current = getLocalHistory().filter(i => (i.epubName || i.downloadUrl || '') !== epubName);
+                    saveLocalHistory(current);
+                    if (opts.animate) {
+                        const entry = historyList.querySelector(`[data-epub="${encodeURIComponent(epubName)}"]`);
+                        if (entry) {
+                            entry.classList.add('removing');
+                            setTimeout(() => {
+                                if (entry.parentNode) entry.parentNode.removeChild(entry);
+                                if (!historyList.querySelector('.history-item')) {
+                                    renderHistory(current);
+                                }
+                            }, 260);
+                            return;
+                        }
+                    }
+                    renderHistory(current);
+                    showMessage(j.message || 'Entrada eliminada', 'success');
+                    return;
+                }
+
+                // If server responds 404 (not found), still remove locally (entry may be client-only)
+                if (res.status === 404) {
+                    const current = getLocalHistory().filter(i => (i.epubName || i.downloadUrl || '') !== epubName);
+                    saveLocalHistory(current);
+                    if (opts.animate) {
+                        const entry = historyList.querySelector(`[data-epub="${encodeURIComponent(epubName)}"]`);
+                        if (entry) {
+                            entry.classList.add('removing');
+                            setTimeout(() => { if (entry.parentNode) entry.parentNode.removeChild(entry); }, 260);
+                        }
+                    } else {
+                        renderHistory(current);
+                    }
+                    showMessage((j && j.message) ? j.message + ' — eliminado localmente' : 'Historial eliminado localmente', 'info');
+                    return;
+                }
+
+                // Other failures
+                showMessage((j && j.message) ? j.message : 'No se pudo eliminar del historial', 'error');
+            } catch (e) {
+                console.error('Error removing history', e);
+                showMessage('Error al borrar del historial', 'error');
+            }
         }
     </script>
 </body>

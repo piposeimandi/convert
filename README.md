@@ -16,7 +16,7 @@ Una aplicación web moderna para convertir cómics en formato CBR a libros elect
 
 - PHP 7.2+
 - Extensión `ZipArchive` (generalmente incluida)
-- Herramienta `7z` (7-Zip) instalada
+- Herramientas `7z` y `unrar` (para archivos CBR con compresión RAR5)
 - Servidor web (Apache, Nginx, etc.) o Docker + Docker Compose (opcional)
 
 ## 🔧 Instalación
@@ -194,6 +194,23 @@ private $maxFileSize = 500 * 1024 * 1024; // 500MB
 
 Cambia este valor según tus necesidades.
 
+### Ajustes de PHP (.user.ini / Docker)
+
+El proyecto incluye un archivo `.user.ini` en la raíz **y** un override específico para Docker (`docker/php-upload.ini`) que elevan los límites de PHP para admitir cargas grandes:
+
+- `upload_max_filesize = 600M`
+- `post_max_size = 600M`
+- `memory_limit = 1024M`
+- `max_execution_time = 600`
+
+Si sirves la app con el servidor integrado (`php -S ...`) o con PHP-FPM/FastCGI, estos ajustes se aplican automáticamente. En el contenedor Docker, el archivo se copia a `/usr/local/etc/php/conf.d/uploads.ini`, así que no tienes que hacer nada adicional. En entornos donde `.user.ini` no se respeta (por ejemplo, algunos hosts con configuración propia), copia los mismos valores a tu `php.ini` o pásalos al iniciar el servidor, por ejemplo:
+
+```bash
+php -d upload_max_filesize=600M -d post_max_size=600M -d memory_limit=1G -S localhost:8111
+```
+
+Los errores quedarán registrados en `/tmp/php-error.log` (ver `.user.ini`).
+
 ### Directorio de salida
 
 Los archivos convertidos se guardan en la carpeta `converted/`. Puedes cambiar esto en `api.php`:
@@ -223,6 +240,20 @@ brew install p7zip
 # Windows
 # Descarga desde: https://www.7-zip.org/
 ```
+
+### Error: "Unsupported Method" al convertir
+
+Los CBR recientes suelen usar RAR5, que no está completamente soportado por `p7zip`. Instala `unrar` (o `unar`) para proporcionar el descompresor propietario:
+
+```bash
+# Ubuntu/Debian
+sudo apt-get install unrar
+
+# macOS (homebrew)
+brew install unar
+```
+
+En Docker no necesitas hacer nada: la imagen ya incluye `unrar` y la API lo usa como respaldo si `7z` falla.
 
 ### Error: "No se encontraron imágenes"
 El archivo CBR podría estar corrupto o no contener imágenes. Intenta:
