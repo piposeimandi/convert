@@ -597,10 +597,9 @@ EOX;
             return;
         }
 
-        if (!$this->isInHistory($fileName)) {
-            echo $this->response(false, 'Este archivo no pertenece a tu sesión actual', null, 403);
-            return;
-        }
+        // Nota: ya no exigimos que el archivo esté en el historial de sesión
+        // para permitir la descarga. Eliminar una entrada del historial solo
+        // afecta la interfaz del usuario; el archivo físico se mantiene.
 
         header('Content-Type: application/epub+zip');
         header('Content-Disposition: attachment; filename="' . $fileName . '"');
