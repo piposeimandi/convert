@@ -43,7 +43,8 @@ Visita: **http://localhost:8111/index.html**
 
 1. Arrastra un archivo `.cbr` a la zona destacada
 2. Haz clic en "Convertir"
-3. ¡Tu EPUB se descargará automáticamente! 🎉
+3. Cuando termine verás el mensaje: "Archivo convertido — ahora puedes descargarlo desde el historial". La interfaz se preparará para aceptar otro archivo.
+4. Descarga el EPUB desde el panel "Historial".
 
 ---
 
@@ -169,5 +170,5 @@ Abre estas documentos después:
 
 ---
 
-**Última actualización:** Diciembre 2024  
-**Versión:** 1.0.0
+**Última actualización:** Diciembre 2025  
+**Versión:** 1.1.0

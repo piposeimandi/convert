@@ -109,7 +109,7 @@ chmod +x demo.sh
 1. Abre `index.html` en tu navegador
 2. Arrastra un archivo `.cbr` (o haz clic para seleccionar)
 3. Haz clic en "Convertir"
-4. El EPUB se descarga automáticamente
+4. El EPUB ya NO se descarga automáticamente. Cuando termine la conversión verás el mensaje "Archivo convertido — ahora puedes descargarlo desde el historial" y la UI quedará preparada para recibir otro archivo. Descarga el EPUB desde el panel `Historial`.
 
 ### Línea de comandos (CLI)
 
@@ -179,7 +179,7 @@ Si no está habilitado, en `php.ini` busca y descomenta:
 extension=zip
 ```
 
-## 📊 Límites
+- ## 📊 Límites
 
 - **Tamaño máximo**: 500MB (configurable en `api.php` línea 15)
 - **Tipos aceptados**: .cbr
