@@ -28,18 +28,18 @@ brew install unar
 
 ### 2️⃣ Preparar el proyecto
 
-Todos los archivos ya están en el directorio:
+Estructura mínima esperada en el directorio del proyecto:
 ```
 .
 ├── api.php                      # Backend API
 ├── index.html                   # Frontend web
-├── convert_cbr_to_epub.py      # Convertidor Python (opcional)
-├── convert_cbr_to_epub.php     # Convertidor PHP (opcional)
-├── demo.sh                      # Script interactivo
+├── demo.sh                      # Script interactivo y verificador (recomendado)
 ├── README.md                    # Documentación completa
-└── [uploads/]                  # Se crea automáticamente
-└── [converted/]                # Se crea automáticamente
+└── [uploads/]                   # Se crea automáticamente
+└── [converted/]                 # Se crea automáticamente
 ```
+
+Nota: en versiones anteriores había scripts auxiliares (p. ej. `convert_cbr_to_epub.py` o `convert_cbr_to_epub.php`). Si no los ves en el repositorio es porque no forman parte del paquete actual; usa `demo.sh` para comprobaciones y opciones de conversión si están disponibles.
 
 ### 3️⃣ Opción A: Servidor Web (Recomendado)
 

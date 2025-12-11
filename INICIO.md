@@ -4,21 +4,14 @@
 
 ### Paso 1️⃣: Verifica que todo está listo
 
+Ejecuta el script de demostración que también realiza verificaciones básicas:
+
 ```bash
-cd /home/adrian/Documentos/TokyoGhoulRe-T01-03
-./verificar.sh
+cd /ruta/al/proyecto
+./demo.sh
 ```
 
-Deberías ver:
-```
-✓ api.php
-✓ index.html
-✓ convert_cbr_to_epub.py
-✓ convert_cbr_to_epub.php
-✓ PHP 8.2.29
-✓ Extensión ZipArchive
-✓ 7z (7-Zip)
-```
+El script comprobará la presencia de `api.php`, `index.html`, PHP, `7z` y `unrar`. En algunas instalaciones los convertidores CLI no están incluidos; `demo.sh` te indicará lo que falta.
 
 ### Paso 2️⃣: Inicia el servidor web
 
