@@ -102,8 +102,9 @@ class CBRtoEPUBAPI {
             return;
         }
 
-        if (!preg_match('/\.cbr$/i', $file['name'])) {
-            echo $this->response(false, 'Solo se aceptan archivos .cbr', null, 400);
+        // Aceptar CBR (RAR) y CBZ/ZIP
+        if (!preg_match('/\.(cbr|cbz|zip)$/i', $file['name'])) {
+            echo $this->response(false, 'Solo se aceptan archivos .cbr, .cbz o .zip', null, 400);
             return;
         }
 
@@ -132,7 +133,8 @@ class CBRtoEPUBAPI {
         $fileId = preg_replace('/[^a-z0-9]/i', '', $_POST['fileId']);
         
         // Buscar archivo
-        $files = glob($this->uploadDir . '/' . $fileId . '_*.cbr');
+        // Buscar archivos por extensión: cbr, cbz o zip
+        $files = glob($this->uploadDir . '/' . $fileId . '_*.{cbr,cbz,zip}', GLOB_BRACE);
         
         if (empty($files)) {
             echo $this->response(false, 'Archivo no encontrado', null, 404);
@@ -363,15 +365,17 @@ class CBRtoEPUBAPI {
             $pageEntries = [];
 
         foreach ($imageFiles as $i => $imgPath) {
-            $imgName = basename($imgPath);
+            $origName = basename($imgPath);
             $ext = strtolower(pathinfo($imgPath, PATHINFO_EXTENSION));
             $mediaType = $ext === 'jpg' ? 'image/jpeg' : "image/{$ext}";
 
+                // Use a unique output name per image to avoid name collisions
                 $imgId = sprintf('img_%04d', $i);
+                $imgOutName = $imgId . ($ext ? '.' . $ext : '');
                 $imageRefs[] = sprintf(
                     '        <item id="%s" href="images/%s" media-type="%s"/>',
                     htmlspecialchars($imgId),
-                htmlspecialchars($imgName),
+                htmlspecialchars($imgOutName),
                 htmlspecialchars($mediaType)
             );
 
@@ -405,7 +409,7 @@ class CBRtoEPUBAPI {
     </body>
     </html>
     HTML;
-                $safeImgName = htmlspecialchars($imgName, ENT_QUOTES | ENT_XML1, 'UTF-8');
+                $safeImgName = htmlspecialchars($imgOutName, ENT_QUOTES | ENT_XML1, 'UTF-8');
                 $pageMarkup = sprintf($pageContent, $i + 1, $safeImgName, $i + 1);
                 $zip->addFromString("OEBPS/pages/{$pageName}", $pageMarkup);
         }
@@ -462,14 +466,16 @@ EOX;
 EOX;
         $zip->addFromString('OEBPS/toc.ncx', $tocNcx);
 
-        foreach ($imageFiles as $imgPath) {
-            $imgName = basename($imgPath);
+        // Add image files using the same unique naming scheme used above
+        foreach ($imageFiles as $i => $imgPath) {
+            $ext = strtolower(pathinfo($imgPath, PATHINFO_EXTENSION));
+            $imgOutName = sprintf('img_%04d', $i) . ($ext ? '.' . $ext : '');
             if (!is_readable($imgPath)) {
-                throw new Exception('No se puede leer la imagen: ' . $imgName);
+                throw new Exception('No se puede leer la imagen: ' . basename($imgPath));
             }
 
-            if (!$zip->addFile($imgPath, "OEBPS/images/{$imgName}")) {
-                throw new Exception('No se pudo agregar la imagen al EPUB: ' . $imgName);
+            if (!$zip->addFile($imgPath, "OEBPS/images/{$imgOutName}")) {
+                throw new Exception('No se pudo agregar la imagen al EPUB: ' . $imgOutName);
             }
         }
 
