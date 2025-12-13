@@ -10,7 +10,7 @@ Este repositorio contiene tanto el backend (`api.php`) como la interfaz de usuar
 
 - Frontend: drag & drop, barra de progreso y historial de conversiones en el navegador.
 - API REST: endpoints para subir, convertir, descargar y listar archivos.
-- Extracción robusta: usa `7z` y, como fallback, `unrar` para CBR/RAR5.
+- Extracción robusta: usa `7z` y, como fallback, `unrar` para CBR/RAR5. También soporta archivos CBZ/ZIP.
 - Historial cliente/servidor: las conversiones se guardan en la sesión y también en `localStorage` del navegador.
 - Eliminación segura: al eliminar una entrada desde la UI el archivo físico NO se borra; se renombra agregando la etiqueta `.DELETE`.
 

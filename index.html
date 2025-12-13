@@ -488,7 +488,7 @@
                 <div class="drop-icon">📖</div>
                 <div class="drop-text">Arrastra tu archivo aquí</div>
                 <div class="drop-hint">o haz clic para seleccionar (máximo 500MB)</div>
-                <input type="file" id="fileInput" accept=".cbr" />
+                <input type="file" id="fileInput" accept=".cbr,.cbz,.zip" />
             </label>
         </div>
 
@@ -670,9 +670,10 @@
         }
 
         function handleFile(file) {
-            // Validar tipo
-            if (!file.name.toLowerCase().endsWith('.cbr')) {
-                showMessage('Solo se aceptan archivos .cbr', 'error');
+            // Validar tipo: soportamos .cbr, .cbz y .zip
+            const lower = file.name.toLowerCase();
+            if (!(lower.endsWith('.cbr') || lower.endsWith('.cbz') || lower.endsWith('.zip'))) {
+                showMessage('Solo se aceptan archivos .cbr, .cbz o .zip', 'error');
                 return;
             }
 
