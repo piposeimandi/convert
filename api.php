@@ -320,8 +320,27 @@ class CBRtoEPUBAPI {
         foreach ($iterator as $file) {
             if ($file->isFile()) {
                 $ext = strtolower($file->getExtension());
+                $basename = $file->getBasename();
+                $realPath = $file->getRealPath();
+
+                // Skip macOS resource forks and metadata files
+                if ($basename === 'Thumbs.db') {
+                    continue;
+                }
+                if (strpos($basename, '._') === 0) {
+                    continue;
+                }
+                if (stripos(str_replace('\\', '/', $realPath), '__macosx') !== false) {
+                    continue;
+                }
+
+                // Skip zero-byte files
+                if (!is_readable($realPath) || filesize($realPath) === 0) {
+                    continue;
+                }
+
                 if (in_array($ext, $validExts)) {
-                    $images[] = $file->getRealPath();
+                    $images[] = $realPath;
                 }
             }
         }
